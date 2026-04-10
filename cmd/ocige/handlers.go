@@ -7,9 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"ocige/pkg/ociregistry"
+
 	"filippo.io/age"
 	"github.com/urfave/cli/v3"
-	"ocige/pkg/ociregistry"
 )
 
 func handlePush(ctx context.Context, cmd *cli.Command) error {
@@ -179,10 +180,7 @@ func handleLs(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println(strings.Repeat("-", 80))
 	for _, f := range index.Files {
 		sizeStr := formatSize(f.Size)
-		displayHash := f.SHA256
-		if strings.HasPrefix(displayHash, "sha256:") {
-			displayHash = displayHash[7:]
-		}
+		displayHash := strings.TrimPrefix(f.SHA256, "sha256:")
 		if outputFormat != "long" && len(displayHash) > 12 {
 			displayHash = displayHash[:12]
 		}

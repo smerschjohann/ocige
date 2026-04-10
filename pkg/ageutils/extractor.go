@@ -7,10 +7,10 @@ import (
 
 // HeaderExtractor wraps an io.Writer and intercepts the age header.
 type HeaderExtractor struct {
-	Target       io.Writer
-	buf          bytes.Buffer
-	headerFound  bool
-	Header       []byte
+	Target      io.Writer
+	buf         bytes.Buffer
+	headerFound bool
+	Header      []byte
 }
 
 func NewHeaderExtractor(target io.Writer) *HeaderExtractor {
@@ -31,7 +31,7 @@ func (e *HeaderExtractor) Write(p []byte) (n int, err error) {
 	// The age header ends with "\n--- <MAC>\n"
 	idx := bytes.Index(b, []byte("\n--- "))
 	if idx != -1 {
-		// Find the newline after the --- 
+		// Find the newline after the ---
 		headerEnd := idx + 1
 		endOfLine := bytes.IndexByte(b[headerEnd:], '\n')
 		if endOfLine != -1 {

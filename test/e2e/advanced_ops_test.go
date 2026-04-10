@@ -26,8 +26,12 @@ func TestAdvancedOpsE2E(t *testing.T) {
 
 	keyFile := filepath.Join(tmpDir, "key.txt")
 	recipientFile := filepath.Join(tmpDir, "recipient.txt")
-	os.WriteFile(keyFile, []byte(validIdentity), 0600)
-	os.WriteFile(recipientFile, []byte(validRecipient), 0644)
+	if err := os.WriteFile(keyFile, []byte(validIdentity), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(recipientFile, []byte(validRecipient), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	targetURL := fmt.Sprintf("%s/test/advanced:latest", registry)
 
@@ -36,7 +40,9 @@ func TestAdvancedOpsE2E(t *testing.T) {
 	// 1. Initial Push
 	file1 := filepath.Join(tmpDir, "file1.txt")
 	data1 := []byte("Initial data")
-	os.WriteFile(file1, data1, 0644)
+	if err := os.WriteFile(file1, data1, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("Append", func(t *testing.T) {
 		// Push first file
@@ -45,7 +51,9 @@ func TestAdvancedOpsE2E(t *testing.T) {
 		// Append second file
 		file2 := filepath.Join(tmpDir, "file2.txt")
 		data2 := []byte("Appended data")
-		os.WriteFile(file2, data2, 0644)
+		if err := os.WriteFile(file2, data2, 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		runOcige(t, "append", "--identity", keyFile, "--insecure", targetURL, file2)
 
@@ -59,7 +67,9 @@ func TestAdvancedOpsE2E(t *testing.T) {
 	t.Run("AppendOverwrite", func(t *testing.T) {
 		file1Updated := filepath.Join(tmpDir, "file1.txt")
 		data1Updated := []byte("Updated initial data")
-		os.WriteFile(file1Updated, data1Updated, 0644)
+		if err := os.WriteFile(file1Updated, data1Updated, 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		// Should fail without force/overwrite (if we implement that check)
 		// For now let's just test that --force works if we implement it.
@@ -74,11 +84,13 @@ func TestAdvancedOpsE2E(t *testing.T) {
 		// 1. Generate new key
 		key2File := filepath.Join(tmpDir, "key2.txt")
 		recip2File := filepath.Join(tmpDir, "recip2.txt")
-		
+
 		runOcige(t, "keygen", "--output", key2File)
 		// Extract recipient from keygen output file
 		recip2 := extractRecipient(t, key2File)
-		os.WriteFile(recip2File, []byte(recip2), 0644)
+		if err := os.WriteFile(recip2File, []byte(recip2), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		// 2. Perform Rekey (Targeting 'latest' tag)
 		runOcige(t, "rekey", "--identity", keyFile, "--insecure", targetURL, recip2File)
@@ -103,7 +115,7 @@ func TestAdvancedOpsE2E(t *testing.T) {
 		for i := 1; i <= 3; i++ {
 			k := filepath.Join(tmpDir, fmt.Sprintf("multi_key%d.txt", i))
 			runOcige(t, "keygen", "-o", k)
-			
+
 			recip := extractRecipient(t, k)
 			recipients = append(recipients, recip)
 			keyFiles = append(keyFiles, k)
@@ -111,7 +123,9 @@ func TestAdvancedOpsE2E(t *testing.T) {
 
 		// Combined recipients file
 		combinedRecipFile := filepath.Join(tmpDir, "combined_recips.txt")
-		os.WriteFile(combinedRecipFile, []byte(strings.Join(recipients, "\n")), 0644)
+		if err := os.WriteFile(combinedRecipFile, []byte(strings.Join(recipients, "\n")), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		// 2. Perform Rekey for ALL 3 recipients
 		// We use key2File from previous test as the 'current' valid identity
@@ -133,9 +147,11 @@ func TestAdvancedOpsE2E(t *testing.T) {
 
 		// Verify file2 is gone, file1 remains
 		outDir := filepath.Join(tmpDir, "extracted_remove")
-		os.MkdirAll(outDir, 0755)
+		if err := os.MkdirAll(outDir, 0755); err != nil {
+			t.Fatal(err)
+		}
 		runOcige(t, "pull", "--identity", validKF, "--insecure", "--output", outDir, targetURL)
-		
+
 		if _, err := os.Stat(filepath.Join(outDir, "file2.txt")); !os.IsNotExist(err) {
 			t.Errorf("file2.txt should have been removed")
 		}

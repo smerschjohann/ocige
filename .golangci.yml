@@ -1,0 +1,22 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - govet
+    - goimports
+    - gosec
+
+issues:
+  exclude-rules:
+    # Ignore SA1019 deprecated AWS SDK manager functions - in-use and stable
+    - path: pkg/storage/s3.go
+      linters:
+        - staticcheck
+      text: 'SA1019'
+    # Ignore gosec in test files - security checks not applicable
+    - path: '_test\.go'
+      linters:
+        - gosec

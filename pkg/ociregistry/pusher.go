@@ -14,12 +14,13 @@ import (
 
 	"ocige/pkg/ageutils"
 
+	"sync"
+
+	"filippo.io/age"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"oras.land/oras-go/v2/registry/remote"
-	"filippo.io/age"
 	"golang.org/x/sync/errgroup"
-	"sync"
+	"oras.land/oras-go/v2/registry/remote"
 )
 
 type Pusher struct {
@@ -90,10 +91,10 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 			}
 
 			relPath, _ := filepath.Rel(baseDir, fpath)
-			
+
 			g.Go(func() error {
 				pm.Message(fmt.Sprintf("Processing %s...", relPath))
-				
+
 				fileEntry, layers, err := p.pushSingleFile(gCtx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm, sem)
 				if err != nil {
 					return fmt.Errorf("failed to push %s: %w", relPath, err)
@@ -168,7 +169,7 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 
 	var newLayers []ocispec.Descriptor
 	sem := make(chan struct{}, p.Concurrency)
-	
+
 	for _, inputPath := range paths {
 		inputPath = filepath.Clean(inputPath)
 		baseDir := filepath.Dir(inputPath)
@@ -187,7 +188,7 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 			}
 
 			pm.Message(fmt.Sprintf("Processing %s...", relPath))
-			
+
 			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm, sem)
 			if err != nil {
 				return err
@@ -265,7 +266,7 @@ func (p *Pusher) Rekey(ctx context.Context, identities []age.Identity, newRecipi
 	if err != nil {
 		return fmt.Errorf("failed to setup vault key encryption: %w", err)
 	}
-	
+
 	vaultString := ""
 	if hi, ok := vaultIdentity.(*age.HybridIdentity); ok {
 		vaultString = hi.String()
@@ -279,7 +280,7 @@ func (p *Pusher) Rekey(ctx context.Context, identities []age.Identity, newRecipi
 	w.Close()
 
 	config.Vault.VaultKeySheaf = base64.StdEncoding.EncodeToString(vaultKeySheafBuf.Bytes())
-	
+
 	configDesc, err := p.pushConfig(ctx, repo, config)
 	if err != nil {
 		return err
@@ -352,9 +353,11 @@ func (p *Pusher) pushIndex(ctx context.Context, repo *remote.Repository, index *
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("failed to encrypt index: %w", err)
 	}
-	indexWriter.Write(indexBytes)
+	if _, err := indexWriter.Write(indexBytes); err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("failed to write to index: %w", err)
+	}
 	indexWriter.Close()
-	
+
 	indexBlobBytes := indexEncBuf.Bytes()
 	indexDigest := digest.FromBytes(indexBlobBytes)
 	indexDesc := ocispec.Descriptor{
@@ -405,7 +408,7 @@ func (p *Pusher) pushManifest(ctx context.Context, repo *remote.Repository, conf
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
-	
+
 	manifestDigest := digest.FromBytes(manifestBytes)
 	manifestDesc := ocispec.Descriptor{
 		MediaType: ocispec.MediaTypeImageManifest,
@@ -458,7 +461,7 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 			return nil, nil, err
 		}
 		// We don't defer os.Remove here because we want to remove it after upload in the goroutine
-		
+
 		n, err := io.CopyN(tempFile, encReader, p.ChunkSize)
 		if n == 0 {
 			tempFile.Close()
@@ -472,7 +475,7 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		if _, err := tempFile.Seek(0, 0); err != nil {
 			return nil, nil, err
 		}
-		
+
 		hasher := sha256.New()
 		if _, err := io.Copy(hasher, tempFile); err != nil {
 			tempFile.Close()
@@ -519,13 +522,13 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 				if attempt > 0 {
 					label += fmt.Sprintf(" (retry %d)", attempt)
 				}
-				
+
 				tr := pm.TrackReader(fmt.Sprintf("%s-%d-%d", relPath, currentOrder, attempt), label, chunkSize, f)
-				
+
 				err = repo.Push(gCtx, desc, tr)
 				tr.Close()
 				f.Close()
-				
+
 				if err == nil {
 					return nil
 				}
@@ -537,9 +540,9 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		mu.Lock()
 		layers = append(layers, desc)
 		chunks = append(chunks, BlobChunk{
-			Digest:         string(chunkDigest),
-			Order:          currentOrder,
-			SizeEncrypted:  chunkSize,
+			Digest:          string(chunkDigest),
+			Order:           currentOrder,
+			SizeEncrypted:   chunkSize,
 			IntegritySHA256: hex.EncodeToString(hasher.Sum(nil)),
 		})
 		mu.Unlock()

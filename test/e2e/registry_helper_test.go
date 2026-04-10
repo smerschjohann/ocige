@@ -21,15 +21,15 @@ func setupRegistry(t *testing.T) string {
 	}
 
 	// Stop/Remove existing container if any
-	exec.Command(cmd, "stop", registryContainerName).Run()
-	exec.Command(cmd, "rm", registryContainerName).Run()
+	_ = exec.Command(cmd, "stop", registryContainerName).Run()
+	_ = exec.Command(cmd, "rm", registryContainerName).Run()
 
 	// Start registry
 	runCmd := exec.Command(cmd, "run", "-d",
 		"-p", registryPort+":5000",
 		"--name", registryContainerName,
 		"registry:2")
-	
+
 	if err := runCmd.Run(); err != nil {
 		t.Fatalf("Failed to start registry container: %v", err)
 	}
@@ -55,12 +55,12 @@ func setupRegistry(t *testing.T) string {
 
 func teardownRegistry(t *testing.T) {
 	t.Helper()
-	
+
 	cmd := "podman"
 	if _, err := exec.LookPath(cmd); err != nil {
 		cmd = "docker"
 	}
 
-	exec.Command(cmd, "stop", registryContainerName).Run()
-	exec.Command(cmd, "rm", registryContainerName).Run()
+	_ = exec.Command(cmd, "stop", registryContainerName).Run()
+	_ = exec.Command(cmd, "rm", registryContainerName).Run()
 }

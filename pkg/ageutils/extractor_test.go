@@ -23,7 +23,9 @@ func TestExtractor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Write([]byte("Hello Secure World"))
+	if _, err := w.Write([]byte("Hello Secure World")); err != nil {
+		t.Fatal(err)
+	}
 	w.Close()
 
 	if !ext.headerFound {

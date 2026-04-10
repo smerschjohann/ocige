@@ -20,7 +20,9 @@ func TestNonPQKeyRejection(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("secret data"), 0644)
+	if err := os.WriteFile(testFile, []byte("secret data"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Standard X25519 keys (NOT PQ-safe)
 	nonPQRecipient := "age1cy0su9fwf3gf9mw868g5yut09p6nytfmmnktexz2ya5uqg9vl9sss4euqm"
@@ -28,19 +30,23 @@ func TestNonPQKeyRejection(t *testing.T) {
 
 	recipientFile := filepath.Join(tmpDir, "bad_recipient.txt")
 	identityFile := filepath.Join(tmpDir, "bad_identity.txt")
-	os.WriteFile(recipientFile, []byte(nonPQRecipient), 0644)
-	os.WriteFile(identityFile, []byte(nonPQIdentity), 0600)
+	if err := os.WriteFile(recipientFile, []byte(nonPQRecipient), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(identityFile, []byte(nonPQIdentity), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	targetURL := fmt.Sprintf("%s/test/security-artifact:latest", registry)
 
 	t.Run("PushWithNonPQRecipient", func(t *testing.T) {
-		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push", 
+		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
 			"--recipients", recipientFile,
 			"--insecure",
 			targetURL,
 			testFile)
 		pushCmd.Dir = "../../"
-		
+
 		out, err := pushCmd.CombinedOutput()
 		if err == nil {
 			t.Fatal("Push should have failed with non-PQ recipient, but it succeeded")
@@ -54,12 +60,12 @@ func TestNonPQKeyRejection(t *testing.T) {
 
 	t.Run("PullWithNonPQIdentity", func(t *testing.T) {
 		// Even if push failed, we can try to pull (assuming some artifact exists or just for identity parsing)
-		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull", 
+		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
 			"--identity", identityFile,
 			"--insecure",
 			targetURL)
 		pullCmd.Dir = "../../"
-		
+
 		out, err := pullCmd.CombinedOutput()
 		if err == nil {
 			t.Fatal("Pull should have failed with non-PQ identity, but it succeeded")

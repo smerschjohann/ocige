@@ -24,12 +24,18 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 	// 1. Prepare test files
 	file1 := filepath.Join(tmpDir, "file1.bin")
 	data1 := make([]byte, 1024*1024)
-	rand.Read(data1)
-	os.WriteFile(file1, data1, 0644)
+	if _, err := rand.Read(data1); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file1, data1, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	file2 := filepath.Join(tmpDir, "file2.txt")
 	data2 := []byte("Selective pull test content.")
-	os.WriteFile(file2, data2, 0644)
+	if err := os.WriteFile(file2, data2, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. Prepare keys
 	// Using keys from push_pull_test.go
@@ -38,8 +44,12 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 
 	keyFile := filepath.Join(tmpDir, "key.txt")
 	recipientFile := filepath.Join(tmpDir, "recipient.txt")
-	os.WriteFile(keyFile, []byte(validIdentity), 0600)
-	os.WriteFile(recipientFile, []byte(validRecipient), 0644)
+	if err := os.WriteFile(keyFile, []byte(validIdentity), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(recipientFile, []byte(validRecipient), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	targetURL := fmt.Sprintf("%s/test/ls-artifact:latest", registry)
 

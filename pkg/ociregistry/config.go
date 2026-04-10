@@ -13,13 +13,13 @@ const (
 
 // Config represents the OCI Config Blob.
 type Config struct {
-	Version string     `json:"version"`
-	Vault   VaultMeta  `json:"vault"`
-	Index   IndexMeta  `json:"index"`
+	Version string    `json:"version"`
+	Vault   VaultMeta `json:"vault"`
+	Index   IndexMeta `json:"index"`
 }
 
 type VaultMeta struct {
-	VaultKeySheaf string `json:"vault_keysheaf"` // Vault Secret Key encrypted for user Recipients
+	VaultKeySheaf  string `json:"vault_keysheaf"`   // Vault Secret Key encrypted for user Recipients
 	VaultPublicKey string `json:"vault_public_key"` // Vault Public Key (for reference)
 }
 
@@ -34,17 +34,17 @@ type Index struct {
 }
 
 type FileEntry struct {
-	Path     string      `json:"path"`
-	Header   string      `json:"keysheaf"` // Individual Age header (encrypted for Vault Public Key)
-	Chunks   []BlobChunk `json:"chunks"`
-	Size     int64       `json:"size_original"`
-	SHA256   string      `json:"sha256_original"`
+	Path   string      `json:"path"`
+	Header string      `json:"keysheaf"` // Individual Age header (encrypted for Vault Public Key)
+	Chunks []BlobChunk `json:"chunks"`
+	Size   int64       `json:"size_original"`
+	SHA256 string      `json:"sha256_original"`
 }
 
 type BlobChunk struct {
-	Digest         string `json:"layer_digest"`
-	Order          int    `json:"order"`
-	SizeEncrypted  int64  `json:"size_encrypted"`
+	Digest          string `json:"layer_digest"`
+	Order           int    `json:"order"`
+	SizeEncrypted   int64  `json:"size_encrypted"`
 	IntegritySHA256 string `json:"integrity_sha256"`
 }
 

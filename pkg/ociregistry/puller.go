@@ -7,15 +7,16 @@ import (
 	"fmt"
 	"io"
 
-	"filippo.io/age"
-	"github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"filippo.io/age"
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 )
 
 type Puller struct {
@@ -55,7 +56,7 @@ func (p *Puller) PullMultiple(ctx context.Context, files []FileEntry, vaultIdent
 		entry := entry // capture
 		g.Go(func() error {
 			pm.Message(fmt.Sprintf("  -> Pulling %s...", entry.Path))
-			
+
 			fileReader, err := p.PullFileInternal(gCtx, entry, vaultIdentity, pm, sem)
 			if err != nil {
 				return fmt.Errorf("failed to decrypt %s: %w", entry.Path, err)
@@ -107,7 +108,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 
 	go func() {
 		defer pw.Close()
-		
+
 		var mu sync.Mutex
 		cond := sync.NewCond(&mu)
 		nextOrder := 0
@@ -130,7 +131,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 			g.Go(func() error {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				
+
 				var lastErr error
 				maxAttempts := p.Retries + 1
 				if maxAttempts < 1 {
@@ -154,7 +155,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 					tr := pm.TrackReader(fmt.Sprintf("%s-%d-%d", entry.Path, chunkOrder, attempt), label, chunk.SizeEncrypted, rc)
 
 					hasher := sha256.New()
-					
+
 					mu.Lock()
 					isNext := (chunkOrder == nextOrder)
 					mu.Unlock()
@@ -192,7 +193,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 						continue
 					}
 					tempPath := tempFile.Name()
-					
+
 					htr := io.TeeReader(tr, hasher)
 					if _, err := io.Copy(tempFile, htr); err != nil {
 						tempFile.Close()
@@ -237,7 +238,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 					}
 					cond.Wait()
 				}
-				
+
 				tempPath := results[i]
 				mu.Unlock()
 
@@ -286,4 +287,3 @@ type readCloserWrapper struct {
 }
 
 func (r *readCloserWrapper) Close() error { return r.closer() }
-
