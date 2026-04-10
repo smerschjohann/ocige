@@ -17,6 +17,11 @@ func main() {
 				Name:  "insecure",
 				Usage: "Use plain HTTP for registry",
 			},
+			&cli.StringFlag{
+				Name:    "docker-config",
+				Usage:   "Path to docker config.json",
+				Sources: cli.EnvVars("DOCKER_CONFIG"),
+			},
 		},
 		Commands: []*cli.Command{
 			{

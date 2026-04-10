@@ -7,16 +7,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 
 	"filippo.io/age"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/credentials"
 )
 
 // BaseClient provides common functionality for registry interactions.
 type BaseClient struct {
-	RepoTarget string
-	PlainHTTP  bool
+	RepoTarget       string
+	PlainHTTP        bool
+	DockerConfigPath string
 }
 
 func (c *BaseClient) GetRepository(ctx context.Context) (*remote.Repository, error) {
@@ -25,6 +29,22 @@ func (c *BaseClient) GetRepository(ctx context.Context) (*remote.Repository, err
 		return nil, fmt.Errorf("failed to create repository: %w", err)
 	}
 	repo.PlainHTTP = c.PlainHTTP
+
+	var store credentials.Store
+	if c.DockerConfigPath != "" {
+		store, err = credentials.NewStore(c.DockerConfigPath, credentials.StoreOptions{})
+	} else {
+		store, err = credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	}
+
+	if err == nil {
+		repo.Client = &auth.Client{
+			Client:     &http.Client{Transport: http.DefaultTransport},
+			Cache:      auth.NewCache(),
+			Credential: credentials.Credential(store),
+		}
+	}
+
 	return repo, nil
 }
 

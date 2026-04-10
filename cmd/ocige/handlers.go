@@ -26,6 +26,7 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	recipientsFile := cmd.String("recipients")
 	chunkSizeMB := cmd.Int("chunk-size")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if recipientsFile == "" {
 		return fmt.Errorf("recipients file is required (use -R or OCIGE_RECIPIENTS)")
@@ -38,6 +39,7 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 
 	pusher := ociregistry.NewPusher(target, int64(chunkSizeMB)*1024*1024)
 	pusher.PlainHTTP = insecure
+	pusher.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Pushing %v to %s...\n", files, target)
 	err = pusher.PushMultiple(ctx, files, recipients)
@@ -59,6 +61,7 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 	identityFile := cmd.String("identity")
 	destDir := cmd.String("output")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -71,6 +74,7 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 
 	puller := ociregistry.NewPuller(target)
 	puller.PlainHTTP = insecure
+	puller.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Fetching index and unlocking vault from %s...\n", target)
 	index, vaultIdentity, err := puller.FetchIndex(ctx, identities)
@@ -139,6 +143,7 @@ func handleLs(ctx context.Context, cmd *cli.Command) error {
 	target := args[0]
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -151,6 +156,7 @@ func handleLs(ctx context.Context, cmd *cli.Command) error {
 
 	puller := ociregistry.NewPuller(target)
 	puller.PlainHTTP = insecure
+	puller.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Unlocking vault and fetching index from %s...\n", target)
 	index, _, err := puller.FetchIndex(ctx, identities)
@@ -180,6 +186,7 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	identityFile := cmd.String("identity")
 	force := cmd.Bool("force")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -192,6 +199,7 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 
 	pusher := ociregistry.NewPusher(target, 100*1024*1024)
 	pusher.PlainHTTP = insecure
+	pusher.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Appending %v to %s...\n", files, target)
 	err = pusher.Append(ctx, files, identities, force)
@@ -214,6 +222,7 @@ func handleRekey(ctx context.Context, cmd *cli.Command) error {
 	newRecipientsFile := args[1]
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -231,6 +240,7 @@ func handleRekey(ctx context.Context, cmd *cli.Command) error {
 
 	pusher := ociregistry.NewPusher(target, 0)
 	pusher.PlainHTTP = insecure
+	pusher.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Rekeying artifact at %s...\n", target)
 	err = pusher.Rekey(ctx, identities, newRecipients)
@@ -253,6 +263,7 @@ func handleRemove(ctx context.Context, cmd *cli.Command) error {
 	files := args[1:]
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -265,6 +276,7 @@ func handleRemove(ctx context.Context, cmd *cli.Command) error {
 
 	pusher := ociregistry.NewPusher(target, 0)
 	pusher.PlainHTTP = insecure
+	pusher.DockerConfigPath = dockerConfig
 
 	fmt.Printf("Removing %v from %s...\n", files, target)
 	err = pusher.Remove(ctx, identities, files)
