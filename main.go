@@ -26,6 +26,12 @@ func main() {
 		handlePull(os.Args[2:])
 	case "ls":
 		handleLs(os.Args[2:])
+	case "append":
+		handleAppend(os.Args[2:])
+	case "rekey":
+		handleRekey(os.Args[2:])
+	case "remove":
+		handleRemove(os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -39,6 +45,9 @@ func printUsage() {
 	fmt.Println("  ocige push -r <registry-target> -R <recipients-file> <path1> [path2...]")
 	fmt.Println("  ocige pull -r <registry-target> -i <identity-file> [-f <filename>] [-C <out-dir>]")
 	fmt.Println("  ocige ls -r <registry-target> -i <identity-file>")
+	fmt.Println("  ocige append -r <registry-target> -i <identity-file> [--force] <path1> [path2...]")
+	fmt.Println("  ocige rekey -r <registry-target> -i <identity-file> -R <new-recipients-file>")
+	fmt.Println("  ocige remove -r <registry-target> -i <identity-file> <path1> [path2...]")
 }
 
 func handlePush(args []string) {
@@ -248,4 +257,107 @@ func parseIdentities(path string) ([]age.Identity, error) {
 	}
 
 	return identities, nil
+}
+func handleAppend(args []string) {
+	appendCmd := flag.NewFlagSet("append", flag.ExitOnError)
+	target := appendCmd.String("r", "", "OCI registry target")
+	identityFile := appendCmd.String("i", "", "Path to age identity file")
+	force := appendCmd.Bool("force", false, "Overwrite existing files without warning")
+	insecure := appendCmd.Bool("insecure", false, "Use plain HTTP")
+
+	appendCmd.Parse(args)
+
+	if *target == "" || *identityFile == "" || appendCmd.NArg() == 0 {
+		fmt.Println("Missing required arguments for append")
+		appendCmd.Usage()
+		os.Exit(1)
+	}
+
+	identities, err := parseIdentities(*identityFile)
+	if err != nil {
+		fmt.Printf("Error parsing identity: %v\n", err)
+		os.Exit(1)
+	}
+
+	pusher := ociregistry.NewPusher(*target, 100*1024*1024)
+	pusher.PlainHTTP = *insecure
+
+	fmt.Printf("Appending %v to %s...\n", appendCmd.Args(), *target)
+	err = pusher.Append(context.Background(), appendCmd.Args(), identities, *force)
+	if err != nil {
+		fmt.Printf("Append failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Append successful!")
+}
+
+func handleRekey(args []string) {
+	rekeyCmd := flag.NewFlagSet("rekey", flag.ExitOnError)
+	target := rekeyCmd.String("r", "", "OCI registry target")
+	identityFile := rekeyCmd.String("i", "", "Path to existing age identity file")
+	recipientsFile := rekeyCmd.String("R", "", "Path to NEW age recipients file")
+	insecure := rekeyCmd.Bool("insecure", false, "Use plain HTTP")
+
+	rekeyCmd.Parse(args)
+
+	if *target == "" || *identityFile == "" || *recipientsFile == "" {
+		fmt.Println("Missing required arguments for rekey")
+		rekeyCmd.Usage()
+		os.Exit(1)
+	}
+
+	identities, err := parseIdentities(*identityFile)
+	if err != nil {
+		fmt.Printf("Error parsing identity: %v\n", err)
+		os.Exit(1)
+	}
+
+	newRecipients, err := parseRecipients(*recipientsFile)
+	if err != nil {
+		fmt.Printf("Error parsing new recipients: %v\n", err)
+		os.Exit(1)
+	}
+
+	pusher := ociregistry.NewPusher(*target, 0)
+	pusher.PlainHTTP = *insecure
+
+	fmt.Printf("Rekeying artifact at %s...\n", *target)
+	err = pusher.Rekey(context.Background(), identities, newRecipients)
+	if err != nil {
+		fmt.Printf("Rekey failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Rekey successful!")
+}
+
+func handleRemove(args []string) {
+	removeCmd := flag.NewFlagSet("remove", flag.ExitOnError)
+	target := removeCmd.String("r", "", "OCI registry target")
+	identityFile := removeCmd.String("i", "", "Path to age identity file")
+	insecure := removeCmd.Bool("insecure", false, "Use plain HTTP")
+
+	removeCmd.Parse(args)
+
+	if *target == "" || *identityFile == "" || removeCmd.NArg() == 0 {
+		fmt.Println("Missing required arguments for remove")
+		removeCmd.Usage()
+		os.Exit(1)
+	}
+
+	identities, err := parseIdentities(*identityFile)
+	if err != nil {
+		fmt.Printf("Error parsing identity: %v\n", err)
+		os.Exit(1)
+	}
+
+	pusher := ociregistry.NewPusher(*target, 0)
+	pusher.PlainHTTP = *insecure
+
+	fmt.Printf("Removing %v from %s...\n", removeCmd.Args(), *target)
+	err = pusher.Remove(context.Background(), identities, removeCmd.Args())
+	if err != nil {
+		fmt.Printf("Remove failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Remove successful!")
 }

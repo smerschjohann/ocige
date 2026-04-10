@@ -92,12 +92,235 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 		}
 	}
 
-	// 4. Prepare and Push Index (WITH header attached for easy fetch)
+	// 4. Push Index
+	indexDesc, err := p.pushIndex(ctx, repo, &index, vaultRecipient)
+	if err != nil {
+		return err
+	}
+	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
+
+	// 5. Push Config
+	config := Config{
+		Version: "1.0",
+		Vault: VaultMeta{
+			VaultKeySheaf:  base64.StdEncoding.EncodeToString(vaultKeySheafBuf.Bytes()),
+			VaultPublicKey: vaultRecipient.String(),
+		},
+		Index: IndexMeta{
+			Digest: string(indexDesc.Digest),
+		},
+	}
+	configDesc, err := p.pushConfig(ctx, repo, &config)
+	if err != nil {
+		return err
+	}
+
+	// 6. Push Manifest
+	return p.pushManifest(ctx, repo, configDesc, allLayers)
+}
+
+// Append adds files to an existing artifact.
+func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Identity, force bool) error {
+	index, vaultIdentity, config, manifest, err := p.FetchIndex(ctx, identities)
+	if err != nil {
+		return fmt.Errorf("failed to fetch existing index: %w", err)
+	}
+	vaultRecipient := vaultIdentity.(*age.HybridIdentity).Recipient()
+
+	repo, err := p.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+
+	existingFiles := make(map[string]bool)
+	for _, f := range index.Files {
+		existingFiles[f.Path] = true
+	}
+
+	var newLayers []ocispec.Descriptor
+	
+	for _, inputPath := range paths {
+		inputPath = filepath.Clean(inputPath)
+		baseDir := filepath.Dir(inputPath)
+
+		err := filepath.WalkDir(inputPath, func(fpath string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+
+			relPath, _ := filepath.Rel(baseDir, fpath)
+			if existingFiles[relPath] && !force {
+				return fmt.Errorf("file %s already exists in artifact (use force to overwrite)", relPath)
+			}
+
+			fmt.Printf("Processing %s (as %s)...\n", fpath, relPath)
+			
+			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient})
+			if err != nil {
+				return err
+			}
+
+			// Overwrite existing entry if it exists
+			found := false
+			for i, f := range index.Files {
+				if f.Path == relPath {
+					index.Files[i] = *fileEntry
+					found = true
+					break
+				}
+			}
+			if !found {
+				index.Files = append(index.Files, *fileEntry)
+			}
+			newLayers = append(newLayers, layers...)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	// Re-collect all referenced layers from index (to avoid keeping old layers of overwritten files in manifest)
+	referencedLayers := make(map[string]bool)
+	for _, f := range index.Files {
+		for _, c := range f.Chunks {
+			referencedLayers[c.Digest] = true
+		}
+	}
+
+	allLayers := []ocispec.Descriptor{}
+	// First, keep existing layers that are still referenced (and aren't the index/config)
+	for _, l := range manifest.Layers {
+		if l.MediaType == MediaTypeLayer && referencedLayers[string(l.Digest)] {
+			allLayers = append(allLayers, l)
+		}
+	}
+	// Add new layers
+	allLayers = append(allLayers, newLayers...)
+
+	// Push new Index
+	indexDesc, err := p.pushIndex(ctx, repo, index, vaultRecipient)
+	if err != nil {
+		return err
+	}
+	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
+
+	// Push updated Config (points to new index)
+	config.Index.Digest = string(indexDesc.Digest)
+	configDesc, err := p.pushConfig(ctx, repo, config)
+	if err != nil {
+		return err
+	}
+
+	return p.pushManifest(ctx, repo, configDesc, allLayers)
+}
+
+// Rekey changes recipients by re-encrypting the Vault Secret Key.
+func (p *Pusher) Rekey(ctx context.Context, identities []age.Identity, newRecipients []age.Recipient) error {
+	repo, err := p.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	vaultIdentity, config, manifest, err := p.UnlockVault(ctx, repo, identities)
+	if err != nil {
+		return fmt.Errorf("failed to unlock vault: %w", err)
+	}
+
+	// Re-encrypt Vault Secret Key
+	vaultKeySheafBuf := &bytes.Buffer{}
+	w, err := age.Encrypt(vaultKeySheafBuf, newRecipients...)
+	if err != nil {
+		return fmt.Errorf("failed to setup vault key encryption: %w", err)
+	}
+	
+	vaultString := ""
+	if hi, ok := vaultIdentity.(*age.HybridIdentity); ok {
+		vaultString = hi.String()
+	} else {
+		return fmt.Errorf("vault identity is not a HybridIdentity")
+	}
+
+	if _, err := io.WriteString(w, vaultString); err != nil {
+		return fmt.Errorf("failed to encrypt vault key: %w", err)
+	}
+	w.Close()
+
+	config.Vault.VaultKeySheaf = base64.StdEncoding.EncodeToString(vaultKeySheafBuf.Bytes())
+	
+	configDesc, err := p.pushConfig(ctx, repo, config)
+	if err != nil {
+		return err
+	}
+
+	return p.pushManifest(ctx, repo, configDesc, manifest.Layers)
+}
+
+// Remove deletes files from the index and manifest.
+func (p *Pusher) Remove(ctx context.Context, identities []age.Identity, paths []string) error {
+	index, vaultIdentity, config, manifest, err := p.FetchIndex(ctx, identities)
+	if err != nil {
+		return fmt.Errorf("failed to fetch index: %w", err)
+	}
+	vaultRecipient := vaultIdentity.(*age.HybridIdentity).Recipient()
+
+	repo, err := p.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+
+	toRemove := make(map[string]bool)
+	for _, p := range paths {
+		toRemove[p] = true
+	}
+
+	newFiles := []FileEntry{}
+	for _, f := range index.Files {
+		if !toRemove[f.Path] {
+			newFiles = append(newFiles, f)
+		}
+	}
+	index.Files = newFiles
+
+	// Re-collect referenced layers
+	referencedLayers := make(map[string]bool)
+	for _, f := range index.Files {
+		for _, c := range f.Chunks {
+			referencedLayers[c.Digest] = true
+		}
+	}
+
+	allLayers := []ocispec.Descriptor{}
+	for _, l := range manifest.Layers {
+		if l.MediaType == MediaTypeLayer && referencedLayers[string(l.Digest)] {
+			allLayers = append(allLayers, l)
+		}
+	}
+
+	// Push new Index
+	indexDesc, err := p.pushIndex(ctx, repo, index, vaultRecipient)
+	if err != nil {
+		return err
+	}
+	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
+
+	config.Index.Digest = string(indexDesc.Digest)
+	configDesc, err := p.pushConfig(ctx, repo, config)
+	if err != nil {
+		return err
+	}
+
+	return p.pushManifest(ctx, repo, configDesc, allLayers)
+}
+
+func (p *Pusher) pushIndex(ctx context.Context, repo *remote.Repository, index *Index, recipient age.Recipient) (ocispec.Descriptor, error) {
 	indexBytes, _ := index.Marshal()
 	indexEncBuf := &bytes.Buffer{}
-	indexWriter, err := age.Encrypt(indexEncBuf, vaultRecipient)
+	indexWriter, err := age.Encrypt(indexEncBuf, recipient)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt index: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("failed to encrypt index: %w", err)
 	}
 	indexWriter.Write(indexBytes)
 	indexWriter.Close()
@@ -115,22 +338,12 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 
 	err = repo.Push(ctx, indexDesc, bytes.NewReader(indexBlobBytes))
 	if err != nil {
-		return fmt.Errorf("failed to push index: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("failed to push index: %w", err)
 	}
-	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
+	return indexDesc, nil
+}
 
-	// 5. Push OCI Config
-	config := Config{
-		Version: "1.0",
-		Vault: VaultMeta{
-			VaultKeySheaf:  base64.StdEncoding.EncodeToString(vaultKeySheafBuf.Bytes()),
-			VaultPublicKey: vaultRecipient.String(),
-		},
-		Index: IndexMeta{
-			Digest: string(indexDigest),
-		},
-	}
-
+func (p *Pusher) pushConfig(ctx context.Context, repo *remote.Repository, config *Config) (ocispec.Descriptor, error) {
 	configBytes, _ := config.Marshal()
 	configDigest := digest.FromBytes(configBytes)
 	configDesc := ocispec.Descriptor{
@@ -139,18 +352,20 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 		Size:      int64(len(configBytes)),
 	}
 
-	err = repo.Push(ctx, configDesc, bytes.NewReader(configBytes))
+	err := repo.Push(ctx, configDesc, bytes.NewReader(configBytes))
 	if err != nil {
-		return fmt.Errorf("failed to push config: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("failed to push config: %w", err)
 	}
+	return configDesc, nil
+}
 
-	// 6. Create and Push Manifest
+func (p *Pusher) pushManifest(ctx context.Context, repo *remote.Repository, configDesc ocispec.Descriptor, layers []ocispec.Descriptor) error {
 	manifest := map[string]interface{}{
 		"schemaVersion": 2,
 		"mediaType":     ocispec.MediaTypeImageManifest,
 		"artifactType":  ArtifactType,
 		"config":        configDesc,
-		"layers":        allLayers,
+		"layers":        layers,
 		"annotations": map[string]string{
 			"org.opencontainers.image.title": "ocige.artifact",
 		},
