@@ -44,20 +44,22 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/ls-artifact:latest", registry)
 
 	// 3. Push files
-	pushCmd := exec.Command("go", "run", "../../main.go", "push",
-		"-r", targetURL,
-		"-R", recipientFile,
-		"-insecure",
+	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+		"--recipients", recipientFile,
+		"--insecure",
+		targetURL,
 		file1, file2)
+	pushCmd.Dir = "../../"
 	if out, err := pushCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
 	}
 
 	// 4. Test LS
-	lsCmd := exec.Command("go", "run", "../../main.go", "ls",
-		"-r", targetURL,
-		"-i", keyFile,
-		"-insecure")
+	lsCmd := exec.Command("go", "run", "./cmd/ocige", "ls",
+		"--identity", keyFile,
+		"--insecure",
+		targetURL)
+	lsCmd.Dir = "../../"
 	lsOut, err := lsCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("LS failed: %v\nOutput: %s", err, string(lsOut))
@@ -70,12 +72,13 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 
 	// 5. Test Selective Pull
 	outDir := filepath.Join(tmpDir, "extracted")
-	pullCmd := exec.Command("go", "run", "../../main.go", "pull",
-		"-r", targetURL,
-		"-i", keyFile,
-		"-insecure",
-		"-f", "file2.txt",
-		"-C", outDir)
+	pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+		"--identity", keyFile,
+		"--insecure",
+		"--output", outDir,
+		targetURL,
+		"file2.txt")
+	pullCmd.Dir = "../../"
 	if out, err := pullCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Selective Pull failed: %v\nOutput: %s", err, string(out))
 	}

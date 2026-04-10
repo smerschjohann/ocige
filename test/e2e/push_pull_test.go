@@ -49,12 +49,13 @@ func TestPushPullMultiFileE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/multi-artifact:latest", registry)
 
 	// 3. Run Push (relative paths to ensure portability)
-	pushCmd := exec.Command("go", "run", "../../main.go", "push", 
-		"-r", targetURL,
-		"-R", recipientFile,
-		"-chunk-size", "1",
-		"-insecure",
+	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push", 
+		"--recipients", recipientFile,
+		"--chunk-size", "1",
+		"--insecure",
+		targetURL,
 		file1, file2, subDir)
+	pushCmd.Dir = "../../"
 	
 	if out, err := pushCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
@@ -62,11 +63,12 @@ func TestPushPullMultiFileE2E(t *testing.T) {
 
 	// 4. Run Pull to a new directory
 	outDir := filepath.Join(tmpDir, "extracted")
-	pullCmd := exec.Command("go", "run", "../../main.go", "pull", 
-		"-r", targetURL,
-		"-i", keyFile,
-		"-insecure",
-		"-C", outDir)
+	pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull", 
+		"--identity", keyFile,
+		"--insecure",
+		"--output", outDir,
+		targetURL)
+	pullCmd.Dir = "../../"
 	
 	if out, err := pullCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Pull failed: %v\nOutput: %s", err, string(out))

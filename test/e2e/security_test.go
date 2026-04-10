@@ -34,11 +34,12 @@ func TestNonPQKeyRejection(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/security-artifact:latest", registry)
 
 	t.Run("PushWithNonPQRecipient", func(t *testing.T) {
-		pushCmd := exec.Command("go", "run", "../../main.go", "push", 
-			"-r", targetURL,
-			"-R", recipientFile,
-			"-insecure",
+		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push", 
+			"--recipients", recipientFile,
+			"--insecure",
+			targetURL,
 			testFile)
+		pushCmd.Dir = "../../"
 		
 		out, err := pushCmd.CombinedOutput()
 		if err == nil {
@@ -53,10 +54,11 @@ func TestNonPQKeyRejection(t *testing.T) {
 
 	t.Run("PullWithNonPQIdentity", func(t *testing.T) {
 		// Even if push failed, we can try to pull (assuming some artifact exists or just for identity parsing)
-		pullCmd := exec.Command("go", "run", "../../main.go", "pull", 
-			"-r", targetURL,
-			"-i", identityFile,
-			"-insecure")
+		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull", 
+			"--identity", identityFile,
+			"--insecure",
+			targetURL)
+		pullCmd.Dir = "../../"
 		
 		out, err := pullCmd.CombinedOutput()
 		if err == nil {
