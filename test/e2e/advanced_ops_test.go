@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +30,8 @@ func TestAdvancedOpsE2E(t *testing.T) {
 	os.WriteFile(recipientFile, []byte(validRecipient), 0644)
 
 	targetURL := fmt.Sprintf("%s/test/advanced:latest", registry)
+
+	var keyFiles []string
 
 	// 1. Initial Push
 	file1 := filepath.Join(tmpDir, "file1.txt")
@@ -68,18 +71,70 @@ func TestAdvancedOpsE2E(t *testing.T) {
 	})
 
 	t.Run("Rekey", func(t *testing.T) {
-		// Placeholder for Rekey test
-		// To properly test this, we need to generate new PQ keys.
-		t.Skip("Rekey test needs proper PQ key generation helper")
+		// 1. Generate new key
+		key2File := filepath.Join(tmpDir, "key2.txt")
+		recip2File := filepath.Join(tmpDir, "recip2.txt")
+		
+		runOcige(t, "keygen", "-o", key2File)
+		// Extract recipient from keygen output file
+		recip2 := extractRecipient(t, key2File)
+		os.WriteFile(recip2File, []byte(recip2), 0644)
+
+		// 2. Perform Rekey (Targeting 'latest' tag)
+		runOcige(t, "rekey", "-r", targetURL, "-i", keyFile, "-R", recip2File, "-insecure")
+
+		// 3. Verify old key fails
+		badPullCmd := exec.Command("go", "run", "main.go", "pull", "-r", targetURL, "-i", keyFile, "-insecure")
+		badPullCmd.Dir = "../.."
+		if err := badPullCmd.Run(); err == nil {
+			t.Errorf("Pull with OLD key should have failed after rekey")
+		}
+
+		// 4. Verify new key works
+		outDir := filepath.Join(tmpDir, "extracted_rekey")
+		runOcige(t, "pull", "-r", targetURL, "-i", key2File, "-insecure", "-C", outDir)
+		verifyFileContent(t, filepath.Join(outDir, "file1.txt"), []byte("Updated initial data"))
+	})
+
+	t.Run("MultiKeyRekey", func(t *testing.T) {
+		// 1. Generate 3 keys
+		var recipients []string
+
+		for i := 1; i <= 3; i++ {
+			k := filepath.Join(tmpDir, fmt.Sprintf("multi_key%d.txt", i))
+			runOcige(t, "keygen", "-o", k)
+			
+			recip := extractRecipient(t, k)
+			recipients = append(recipients, recip)
+			keyFiles = append(keyFiles, k)
+		}
+
+		// Combined recipients file
+		combinedRecipFile := filepath.Join(tmpDir, "combined_recips.txt")
+		os.WriteFile(combinedRecipFile, []byte(strings.Join(recipients, "\n")), 0644)
+
+		// 2. Perform Rekey for ALL 3 recipients
+		// We use key2File from previous test as the 'current' valid identity
+		key2File := filepath.Join(tmpDir, "key2.txt")
+		runOcige(t, "rekey", "-r", targetURL, "-i", key2File, "-R", combinedRecipFile, "-insecure")
+
+		// 3. Verify ALL 3 keys can pull
+		for i, kf := range keyFiles {
+			outDir := filepath.Join(tmpDir, fmt.Sprintf("extracted_multi_%d", i))
+			runOcige(t, "pull", "-r", targetURL, "-i", kf, "-insecure", "-C", outDir)
+			verifyFileContent(t, filepath.Join(outDir, "file1.txt"), []byte("Updated initial data"))
+		}
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		runOcige(t, "remove", "-r", targetURL, "-i", keyFile, "-insecure", "file2.txt")
+		// Use one of the keys from MultiKeyRekey (which updated the artifact)
+		validKF := keyFiles[0]
+		runOcige(t, "remove", "-r", targetURL, "-i", validKF, "-insecure", "file2.txt")
 
 		// Verify file2 is gone, file1 remains
 		outDir := filepath.Join(tmpDir, "extracted_remove")
 		os.MkdirAll(outDir, 0755)
-		runOcige(t, "pull", "-r", targetURL, "-i", keyFile, "-insecure", "-C", outDir)
+		runOcige(t, "pull", "-r", targetURL, "-i", validKF, "-insecure", "-C", outDir)
 		
 		if _, err := os.Stat(filepath.Join(outDir, "file2.txt")); !os.IsNotExist(err) {
 			t.Errorf("file2.txt should have been removed")
@@ -107,4 +162,19 @@ func verifyFileContent(t *testing.T, path string, expected []byte) {
 	if !bytes.Equal(data, expected) {
 		t.Errorf("Content mismatch for %s: expected %q, got %q", path, string(expected), string(data))
 	}
+}
+func extractRecipient(t *testing.T, keyFile string) string {
+	t.Helper()
+	data, err := os.ReadFile(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, l := range lines {
+		if strings.HasPrefix(l, "# Public key: ") {
+			return strings.TrimPrefix(l, "# Public key: ")
+		}
+	}
+	t.Fatal("Could not find public key in keygen output")
+	return ""
 }

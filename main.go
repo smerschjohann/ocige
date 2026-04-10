@@ -32,6 +32,8 @@ func main() {
 		handleRekey(os.Args[2:])
 	case "remove":
 		handleRemove(os.Args[2:])
+	case "keygen":
+		handleKeygen(os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -48,6 +50,7 @@ func printUsage() {
 	fmt.Println("  ocige append -r <registry-target> -i <identity-file> [--force] <path1> [path2...]")
 	fmt.Println("  ocige rekey -r <registry-target> -i <identity-file> -R <new-recipients-file>")
 	fmt.Println("  ocige remove -r <registry-target> -i <identity-file> <path1> [path2...]")
+	fmt.Println("  ocige keygen [-o <output-file>]")
 }
 
 func handlePush(args []string) {
@@ -360,4 +363,31 @@ func handleRemove(args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Remove successful!")
+}
+
+func handleKeygen(args []string) {
+	keygenCmd := flag.NewFlagSet("keygen", flag.ExitOnError)
+	outFile := keygenCmd.String("o", "", "Output file (default: stdout)")
+	
+	keygenCmd.Parse(args)
+
+	id, err := age.GenerateHybridIdentity()
+	if err != nil {
+		fmt.Printf("Failed to generate key: %v\n", err)
+		os.Exit(1)
+	}
+
+	out := os.Stdout
+	if *outFile != "" {
+		f, err := os.OpenFile(*outFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			fmt.Printf("Failed to open output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		out = f
+	}
+
+	fmt.Fprintf(out, "# Public key: %s\n", id.Recipient().String())
+	fmt.Fprintf(out, "%s\n", id.String())
 }
