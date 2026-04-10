@@ -1,0 +1,52 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="201px" height="240px" viewBox="-0.5 -0.5 201 240" content="&lt;mxfile&gt;&lt;diagram id=&quot;ocige-logo&quot; name=&quot;Logo&quot;&gt;zZZNb6MwEIZ/DXfAQMgxoaTdw2arptJqjw6egFWDkeN87a9fOxgIgSqNSqTNIbLfsfHMM8MYC0X58VngMvvJCTDLtcnRQk+W6/pTX/1r4VQJgY0qIRWUVJLTCiv6F4xoG3VHCWw7CyXnTNKyKya8KCCRHQ0LwQ/dZRvOuqeWOIWesEow66u/KZFZpYbupNVfgKZZfbITTCtLjuvFJpJthgk/XEgotlAkOJfVKD9GwDS7mku1b/GJtXFMQCG/siGDY7Vlj9nORGc8k6c6XOVkqYdqMU55YaF5CYLmIEG06mstqRjmh4xKWJU40dsOqgaUlsmcqZmjhhvKWMQZF+fnI2eNHdDbtlLwD7iw2HYQzxaNpYbtKaUfqQl+D0LC8UIykT8DV/6Jk1pirKjOginDpr4ObVKdwGjZZUJ9I2JTSGnz7Ja1Ghjcw+gZ5+Vt9mqPqmq4j2nBCxjCuTn/ejjDkXBO/C5Or4/TH6A5Bsw1J6fbMAXfFQSIIXZfkW5sjGw8RHVNJrZt96iikagGV0U66VMNB6gGI1D9gBNRnegxRdqvx6vyHQPeFHXhhX7/DfcGXnBvFHhrrKDcpCcFxUXKxsZHqFB3H9X9+mnLdzrccZBe1eO0j9Qd6pnh95EqF/vVyBOaQh+qXtqBNwhpoGtiRlPNLFGM9AU312youvxnxpBTQj7NVttidEfY8EKazxcvrOfGScfMFzinTMN8AbYHfZIxDN2QYyTQ7iawaTCdBD6oo2x368Ekxsvo7c/re6zGdvRr+T77sYzfVv9/Vh33G1ltrhQGUjmlz6RFqmwPyrTnTL6WaXR/ptW0/Wo92y4+/VH8Dw==&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <path d="M 60 2 L 140 2 L 180 77 L 140 152 L 60 152 L 20 77 Z" fill="#1ba1e2" stroke="#006eaf" stroke-width="4" stroke-miterlimit="10" pointer-events="all"/>
+        <ellipse cx="100" cy="57" rx="25" ry="25" fill="none" stroke="#ffffff" stroke-width="8" pointer-events="all"/>
+        <rect x="60" y="62" width="80" height="60" rx="9" ry="9" fill="#f0a30a" stroke="#bd7000" stroke-width="3" pointer-events="all"/>
+        <ellipse cx="100" cy="84" rx="7" ry="7" fill="#ffffff" stroke="none" pointer-events="all"/>
+        <path d="M 91 86 L 109 96 L 91 106 Z" fill="#ffffff" stroke="none" transform="rotate(90,100,96)" pointer-events="all"/>
+        <rect x="0" y="152" width="200" height="60" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility" style="overflow: visible; text-align: left;">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 198px; height: 1px; padding-top: 182px; margin-left: 1px;">
+                        <div data-drawio-colors="color: #1ba1e2; " style="box-sizing: border-box; font-size: 0px; text-align: center;">
+                            <div style="display: inline-block; font-size: 48px; font-family: Helvetica; color: rgb(27, 161, 226); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; overflow-wrap: normal;">
+                                ocige
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="100" y="196" fill="#1ba1e2" font-family="Helvetica" font-size="48px" text-anchor="middle" font-weight="bold">
+                    ocige
+                </text>
+            </switch>
+        </g>
+        <rect x="0" y="209" width="200" height="30" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility" style="overflow: visible; text-align: left;">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 198px; height: 1px; padding-top: 224px; margin-left: 1px;">
+                        <div data-drawio-colors="color: #f0a30a; " style="box-sizing: border-box; font-size: 0px; text-align: center;">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(240, 163, 10); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; overflow-wrap: normal;">
+                                ENCRYPTED CONTAINERS
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="100" y="228" fill="#f0a30a" font-family="Helvetica" font-size="12px" text-anchor="middle" font-weight="bold">
+                    ENCRYPTED CONTAINERS
+                </text>
+            </switch>
+        </g>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://www.diagrams.net/doc/faq/svg-export-text-problems" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Text is not SVG - cannot display
+            </text>
+        </a>
+    </switch>
+</svg>

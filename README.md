@@ -1,5 +1,11 @@
+<p align="center">
+  <img src="ocige.icon.drawio.svg" alt="Ocige" width="200">
+</p>
+
+
 # Ocige
-*Ocige* is a tool designed for exchanging files via a container registry. It utilizes Age encryption to secure files and leverages container registries for storage. To support large files, the content is split into chunks and packed as individual layers within the container image.
+
+*Ocige* (_O-CIGE_) is a tool for exchanging files via a container registry. It utilizes Age encryption to secure files and leverages container registries for storage. To support large files, the content is split into chunks and packed as individual layers within the container image.
 For key exchange, exclusively quantum-secure algorithms are used.
 Designed as a CLI tool, it is distributed as a single binary with no external dependencies.
 
