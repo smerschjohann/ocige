@@ -52,14 +52,12 @@ func handlePush(args []string) {
 		os.Exit(1)
 	}
 
-	// 1. Validate and Parse Recipients
 	recipients, err := parseRecipients(*recipientsFile)
 	if err != nil {
 		fmt.Printf("Error parsing recipients: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 2. Setup Pusher
 	pusher := ociregistry.NewPusher(*target, (*chunkSizeMB)*1024*1024)
 	pusher.PlainHTTP = *insecure
 
@@ -108,14 +106,14 @@ func handlePull(args []string) {
 	puller := ociregistry.NewPuller(*target)
 	puller.PlainHTTP = *insecure
 
-	fmt.Printf("Fetching index from %s...\n", *target)
-	index, err := puller.FetchIndex(context.Background(), identities)
+	fmt.Printf("Fetching index and unlocking vault from %s...\n", *target)
+	index, vaultIdentity, err := puller.FetchIndex(context.Background(), identities)
 	if err != nil {
-		fmt.Printf("Failed to fetch/decrypt index: %v\n", err)
+		fmt.Printf("Failed to unlock vault or fetch index: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Found %d files. Extracting to %s...\n", len(index.Files), *destDir)
+	fmt.Printf("Vault unlocked. Found %d files. Extracting to %s...\n", len(index.Files), *destDir)
 	
 	if err := os.MkdirAll(*destDir, 0755); err != nil {
 		fmt.Printf("Failed to create destination directory: %v\n", err)
@@ -124,7 +122,7 @@ func handlePull(args []string) {
 
 	for _, entry := range index.Files {
 		fmt.Printf("  -> Pulling %s...\n", entry.Path)
-		fileReader, err := puller.PullFile(context.Background(), entry, identities)
+		fileReader, err := puller.PullFile(context.Background(), entry, vaultIdentity)
 		if err != nil {
 			fmt.Printf("      Failed to decrypt %s: %v\n", entry.Path, err)
 			continue

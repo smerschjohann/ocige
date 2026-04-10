@@ -1,33 +1,33 @@
 # OCI-Compliant Vault Concept for Ocige
 
-This document describes the concept of **Ocige** for secure, multi-file-capable data storage in an OCI-compliant container registry. The focus is on **maximum privacy (metadata obfuscation)**, **quantum security**, and **scalability via chunking**.
+This document describes the concept of **Ocige** for secure, multi-file-capable data storage in an OCI-compliant container registry. The focus is on **maximum privacy (metadata obfuscation)**, **quantum security (PQ-safe)**, and **scalability**.
 
-## 1. Core Architecture: The "Secure Index" Method
+## 1. Core Architecture: The "Vault Identity" (Proxy Key) Method
 
-Unlike standard images or simple tar archives, Ocige uses an indexing system that strictly separates metadata from user data, encrypting both layers independently.
+Ocige uses a two-layer encryption strategy to decouple user access management from data storage. This allows for better scaling and instant re-keying without touching the actual data layers.
 
 An Ocige artifact consists of:
-1.  **OCI Manifest**: A list of all data blobs and the index blob.
-2.  **Encrypted Index Layer**: An encrypted blob containing the file tree (filenames, paths, file sizes, and individual Age headers).
-3.  **Encrypted Payload Layers**: The actually encrypted file contents, split into chunks.
-4.  **OCI Config**: The carrier for the Age header of the Index Layer.
+1.  **Vault Identity**: A dedicated, random, and internal PQ-safe key pair (`age.HybridIdentity`) unique to each artifact.
+2.  **Encrypted Index Layer**: A JSON blob containing the file tree and individual file headers, encrypted for the **Vault Identity**.
+3.  **Encrypted Payload Layers**: Individual file chunks, encrypted for the **Vault Identity**.
+4.  **OCI Config**: Stores the **Vault Identity's Secret Key**, encrypted for the actual **User Recipients** (`VaultKeySheaf`).
 
-## 2. Metadata Privacy & Total Obfuscation
+## 2. Encryption Workflow (Proxy Key Pattern)
 
-To prevent registry administrators or monitoring tools from drawing conclusions about the content, all identifiable information is encrypted:
+1.  **Data Layer**: Every file and the index itself is encrypted using the `Vault Public Key`. This ensures that all data blobs are locked by a single, internal key.
+2.  **Access Layer**: The `Vault Secret Key` is encrypted using the user's `Recipients` (Age identities).
+3.  **Decryption**: To pull data, the user first decrypts the `Vault Secret Key` using their own identity, then uses that internal key to unlock the index and data layers.
 
-- **Manifest & Layer Annotations**: Instead of clear-text names, generic titles are used:
-    - Manifest: `org.opencontainers.image.title": "ocige.artifact"`
-    - Layer: `org.opencontainers.image.title": "ocige.chunk.<n>"`
-- **Encrypted Index**: Clear-text filenames and the folder structure are stored **exclusively** within the encrypted index layer. Without the Age key, an attacker sees only a collection of anonymous blobs.
-- **OCI Config**: The config file contains no information about the original file (no name, no size, no hashes). It only contains the `keysheaf` (encrypted Age header) for the index layer.
+### Advantage: Instant Re-Keying
+To add or remove recipients, only the tiny **OCI Config** blob (containing the encrypted vault secret) needs to be updated. The potentially terabytes of data layers and the index layer remain unchanged and don't need to be re-uploaded.
 
-## 3. Individual Encryption & Random Access
+## 3. Metadata Privacy & Total Obfuscation
 
-Each file within the artifact is protected by its own Age encryption session:
-1.  Each file receives its own random symmetric file key.
-2.  The corresponding Age header is stored in the encrypted index.
-3.  **Advantage**: This enables "Random Access". The client can load and decrypt the index, then specifically load only the data chunks for a specific file without having to download the entire archive.
+To prevent registry administrators or monitoring tools from identifying contents, all information is encrypted or anonymized:
+
+- **Anonymized Manifest**: Generic titles like `ocige.artifact` and `ocige.chunk.<n>` are used.
+- **Encrypted Structure**: Filenames, folder structures, and individual file sizes are exclusively stored in the encrypted Index layer.
+- **Config Privacy**: The OCI Config contains no clear-text metadata about the files; it only serves as the "Key Locker" for the Vault Identity.
 
 ## 4. OCI Manifest Structure (Example)
 
@@ -38,17 +38,17 @@ Each file within the artifact is protected by its own Age encryption session:
   "artifactType": "application/vnd.ocige.artifact.v1",
   "config": {
     "mediaType": "application/vnd.ocige.config.v1+json",
-    "digest": "sha256:<hash-of-anonymous-config>"
+    "digest": "sha256:<anonymized-config-hash>"
   },
   "layers": [
     {
       "mediaType": "application/vnd.ocige.index.v1+encrypted",
-      "digest": "sha256:<hash-of-encrypted-index>",
+      "digest": "sha256:<encrypted-index-hash>",
       "annotations": { "org.opencontainers.image.title": "ocige.index" }
     },
     {
       "mediaType": "application/vnd.ocige.layer.v1+encrypted",
-      "digest": "sha256:<hash-of-file1-chunk1>",
+      "digest": "sha256:<file-chunk-hash>",
       "annotations": { "org.opencontainers.image.title": "ocige.chunk.0" }
     }
   ]
@@ -57,7 +57,7 @@ Each file within the artifact is protected by its own Age encryption session:
 
 ## 5. The Index File Structure
 
-The Index File is an encrypted JSON blob that acts as the "Secure Registry within the Registry". It is identified by the `application/vnd.ocige.index.v1+encrypted` media type.
+The Index File is an encrypted JSON blob (`application/vnd.ocige.index.v1+encrypted`). It maps logical paths to OCI blobs.
 
 Example of the decrypted Index JSON:
 ```json
@@ -65,7 +65,7 @@ Example of the decrypted Index JSON:
   "files": [
     {
       "path": "docs/manual.pdf",
-      "keysheaf": "<Base64 age header for this file>",
+      "keysheaf": "<Base64 age header for this file - encrypted for Vault PK>",
       "chunks": [
         {
           "layer_digest": "sha256:<blob-hash>",
@@ -81,25 +81,19 @@ Example of the decrypted Index JSON:
 }
 ```
 
-Each file entry contains the technical information required to fetch and decrypt specifically that file. This hierarchical encryption (Config -> Index -> Files) ensures that even if one file key was somehow leaked, the names and structure of other files remain protected by the index encryption.
-
-## 6. Garbage Collector Safety
-
-The mechanism is fully compliant with the OCI Image Manifest specification. Since all blobs (index and data chunks) are explicitly listed in the `layers` array of the manifest, they are considered active by registry garbage collectors and not deleted as long as a tag (e.g., `:latest`) points to the manifest.
-
 ## 6. Quantum Secure Age Keys
 
-Ocige leverages the post-quantum security of **Age (X25519 + Kyber768 hybrid keys)**.
-- Public Keys start with `age1pq1...`.
-- Secret Keys start with `AGE-SECRET-KEY-PQ-1...`.
-- The application enforces the use of these keys to guarantee future-proof encryption against attacks by quantum computers.
+Ocige strictly enforces the use of **Post-Quantum Cryptography** (PQ-safe) for both the vault identity and user recipients:
+- Uses **Hybrid Keys** (Kyber768 + X25519).
+- Public Keys: `age1pq1...`
+- Secret Keys: `AGE-SECRET-KEY-PQ-1...`
 
-## 7. Security Benefits Summary
+## 7. Security Matrix
 
-| Feature | Standard OCI / ORAS | Ocige Architecture 2.0 |
+| Feature | Standard OCI / ORAS | Ocige Vault Architecture |
 | :--- | :--- | :--- |
-| **Filenames** | Often visible in annotations | **Encrypted in the index** |
-| **File structure** | Visible | **Encrypted in the index** |
-| **Per-file sizes** | Visible | **Encrypted in the index** |
-| **Access Control** | Registry Auth | **Age (End-to-End) + PQ Security** |
-| **Selective Pull** | Yes (via Layers) | **Yes (via Index + individual headers)** |
+| **Filenames** | Visible in annotations | **Encrypted in Index** |
+| **Data Encryption** | Optional / External | **Native Age (Hybrid PQ)** |
+| **Access Change** | Registry Permissions | **Cryptographic Re-Key (Vault Identity)** |
+| **Metadata Privacy** | Low | **Absolute (Total Obfuscation)** |
+| **Large File Support** | Chunked Layers | **Chunked Layers + Individual Headers** |

@@ -30,11 +30,10 @@ func NewPusher(target string, chunkSize int64) *Pusher {
 	return &Pusher{
 		RepoTarget: target,
 		ChunkSize:  chunkSize,
-		PlainHTTP:  false,
 	}
 }
 
-// PushMultiple uploads multiple paths (files or directories) as an encrypted OCI artifact.
+// PushMultiple uploads multiple paths as an encrypted OCI artifact using the Vault Identity.
 func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []age.Recipient) error {
 	repo, err := remote.NewRepository(p.RepoTarget)
 	if err != nil {
@@ -42,12 +41,29 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 	}
 	repo.PlainHTTP = p.PlainHTTP
 
+	// 1. Generate PQ-safe Vault Identity
+	vaultIdentity, err := age.GenerateHybridIdentity()
+	if err != nil {
+		return fmt.Errorf("failed to generate vault identity: %w", err)
+	}
+	vaultRecipient := vaultIdentity.Recipient()
+
+	// 2. Encrypt the Vault Secret Key for the provided recipients
+	vaultKeySheafBuf := &bytes.Buffer{}
+	w, err := age.Encrypt(vaultKeySheafBuf, recipients...)
+	if err != nil {
+		return fmt.Errorf("failed to setup vault key encryption: %w", err)
+	}
+	if _, err := io.WriteString(w, vaultIdentity.String()); err != nil {
+		return fmt.Errorf("failed to encrypt vault key: %w", err)
+	}
+	w.Close()
+
 	var allLayers []ocispec.Descriptor
 	index := Index{Files: []FileEntry{}}
 
-	// 1. Encrypt and Push each file
+	// 3. Encrypt and Push each file for the Vault Recipient
 	for _, inputPath := range paths {
-		// Ensure we have a clean path
 		inputPath = filepath.Clean(inputPath)
 		baseDir := filepath.Dir(inputPath)
 
@@ -59,14 +75,10 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 				return nil
 			}
 
-			// Calculate relative path for storage in index
-			relPath, err := filepath.Rel(baseDir, fpath)
-			if err != nil {
-				return fmt.Errorf("failed to calculate rel path for %s: %w", fpath, err)
-			}
-
+			relPath, _ := filepath.Rel(baseDir, fpath)
 			fmt.Printf("Processing %s (as %s)...\n", fpath, relPath)
-			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, recipients)
+			
+			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient})
 			if err != nil {
 				return err
 			}
@@ -80,20 +92,17 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 		}
 	}
 
-	// 2. Prepare, Encrypt and Push Index
-	indexBytes, err := index.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to marshal index: %w", err)
-	}
-
-	indexEncReader, indexHeaderExt := p.encryptStream(bytes.NewReader(indexBytes), recipients)
-	
-	// Upload index blob as a single layer
-	indexBlobBytes, err := io.ReadAll(indexEncReader)
+	// 4. Prepare and Push Index (WITH header attached for easy fetch)
+	indexBytes, _ := index.Marshal()
+	indexEncBuf := &bytes.Buffer{}
+	indexWriter, err := age.Encrypt(indexEncBuf, vaultRecipient)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt index: %w", err)
 	}
+	indexWriter.Write(indexBytes)
+	indexWriter.Close()
 	
+	indexBlobBytes := indexEncBuf.Bytes()
 	indexDigest := digest.FromBytes(indexBlobBytes)
 	indexDesc := ocispec.Descriptor{
 		MediaType: MediaTypeIndex,
@@ -110,20 +119,19 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 	}
 	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
 
-	// 3. Push OCI Config
+	// 5. Push OCI Config
 	config := Config{
 		Version: "1.0",
+		Vault: VaultMeta{
+			VaultKeySheaf:  base64.StdEncoding.EncodeToString(vaultKeySheafBuf.Bytes()),
+			VaultPublicKey: vaultRecipient.String(),
+		},
 		Index: IndexMeta{
-			KeySheaf: base64.StdEncoding.EncodeToString(indexHeaderExt.Header),
-			Digest:   string(indexDigest),
+			Digest: string(indexDigest),
 		},
 	}
 
-	configBytes, err := config.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
+	configBytes, _ := config.Marshal()
 	configDigest := digest.FromBytes(configBytes)
 	configDesc := ocispec.Descriptor{
 		MediaType: MediaTypeConfig,
@@ -136,7 +144,7 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 		return fmt.Errorf("failed to push config: %w", err)
 	}
 
-	// 4. Create and Push Manifest
+	// 6. Create and Push Manifest
 	manifest := map[string]interface{}{
 		"schemaVersion": 2,
 		"mediaType":     ocispec.MediaTypeImageManifest,
@@ -257,15 +265,13 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		}
 	}
 
-	entry := &FileEntry{
+	return &FileEntry{
 		Path:   relPath,
 		Header: base64.StdEncoding.EncodeToString(headerExt.Header),
 		Chunks: chunks,
 		Size:   fileSize,
 		SHA256: fileHash,
-	}
-
-	return entry, layers, nil
+	}, layers, nil
 }
 
 func (p *Pusher) encryptStream(r io.Reader, recipients []age.Recipient) (io.Reader, *ageutils.HeaderExtractor) {

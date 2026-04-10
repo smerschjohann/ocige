@@ -12,27 +12,31 @@ const (
 )
 
 // Config represents the OCI Config Blob.
-// It only contains technical metadata and the Age header for the Index Layer.
 type Config struct {
-	Version  string     `json:"version"`
-	Index    IndexMeta  `json:"index"`
+	Version string     `json:"version"`
+	Vault   VaultMeta  `json:"vault"`
+	Index   IndexMeta  `json:"index"`
+}
+
+type VaultMeta struct {
+	VaultKeySheaf string `json:"vault_keysheaf"` // Vault Secret Key encrypted for user Recipients
+	VaultPublicKey string `json:"vault_public_key"` // Vault Public Key (for reference)
 }
 
 type IndexMeta struct {
-	KeySheaf string `json:"keysheaf"` // Age header for the encrypted Index blob
-	Digest   string `json:"digest"`   // Digest of the encrypted Index blob layer
+	Digest string `json:"digest"` // Digest of the encrypted Index blob layer
 }
 
 // Index represents the CONTENT of the encrypted Index blob.
-// It maps filenames to their individual Age headers and layer chunks.
+// Note: the index and all files are encrypted for the Vault Public Key.
 type Index struct {
 	Files []FileEntry `json:"files"`
 }
 
 type FileEntry struct {
 	Path     string      `json:"path"`
-	Header   string      `json:"keysheaf"` // Individual Age header for this file
-	Chunks   []BlobChunk `json:"chunks"`   // Digests of the chunks of this file
+	Header   string      `json:"keysheaf"` // Individual Age header (encrypted for Vault Public Key)
+	Chunks   []BlobChunk `json:"chunks"`
 	Size     int64       `json:"size_original"`
 	SHA256   string      `json:"sha256_original"`
 }
