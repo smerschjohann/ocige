@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"ocige/pkg/fusefs"
 	"ocige/pkg/ociregistry"
 
 	"filippo.io/age"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/urfave/cli/v3"
 )
 
@@ -333,5 +336,106 @@ func handleKeygen(ctx context.Context, cmd *cli.Command) error {
 
 	fmt.Fprintf(out, "# Public key: %s\n", id.Recipient().String())
 	fmt.Fprintf(out, "%s\n", id.String())
+	return nil
+}
+
+func handleMount(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args().Slice()
+	if len(args) < 2 {
+		return fmt.Errorf("usage: ocige mount <target> <mountpoint>")
+	}
+	target := args[0]
+	mountpoint := args[1]
+
+	identityFile := cmd.String("identity")
+	if identityFile == "" {
+		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
+	}
+
+	identities, err := parseIdentities(identityFile)
+	if err != nil {
+		return fmt.Errorf("error parsing identity: %w", err)
+	}
+
+	// Create mountpoint if it doesn't exist
+	if err := os.MkdirAll(mountpoint, 0755); err != nil {
+		return fmt.Errorf("failed to create mountpoint: %w", err)
+	}
+
+	return fusefs.Mount(ctx, fusefs.MountOptions{
+		Target:     target,
+		Mountpoint: mountpoint,
+		Identities: identities,
+		BaseClient: &ociregistry.BaseClient{
+			RepoTarget:       target,
+			PlainHTTP:        cmd.Bool("insecure"),
+			DockerConfigPath: cmd.String("docker-config"),
+		},
+		CacheDir:     cmd.String("cache-dir"),
+		CacheMaxSize: int64(cmd.Int("cache-size")) * 1024 * 1024,
+		Concurrency:  int(cmd.Int("concurrency")),
+		AllowOther:   cmd.Bool("allow-other"),
+		Debug:        cmd.Bool("debug"),
+	})
+}
+
+func handleCacheCleanup(ctx context.Context, cmd *cli.Command) error {
+	cacheDir := cmd.String("cache-dir")
+	chunksDir := filepath.Join(cacheDir, "chunks")
+	// Use 0 as maxSize as we are only using it for deletion/scoping, not putting.
+	cache, err := fusefs.NewDiskCache(chunksDir, 0)
+	if err != nil {
+		return fmt.Errorf("failed to initialize cache for cleanup: %w", err)
+	}
+
+	args := cmd.Args().Slice()
+	if len(args) == 0 {
+		fmt.Printf("Clearing global cache at %s...\n", chunksDir)
+		return cache.Clear()
+	}
+
+	target := args[0]
+	fmt.Printf("Clearing cache for target %s...\n", target)
+
+	client := &ociregistry.BaseClient{
+		RepoTarget:       target,
+		PlainHTTP:        cmd.Bool("insecure"),
+		DockerConfigPath: cmd.String("docker-config"),
+	}
+
+	repo, err := client.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+
+	desc, err := repo.Resolve(ctx, repo.Reference.Reference)
+	if err != nil {
+		return fmt.Errorf("failed to resolve manifest: %w", err)
+	}
+
+	rc, err := repo.Fetch(ctx, desc)
+	if err != nil {
+		return fmt.Errorf("failed to fetch manifest: %w", err)
+	}
+	defer rc.Close()
+
+	var manifest ocispec.Manifest
+	if err := json.NewDecoder(rc).Decode(&manifest); err != nil {
+		return fmt.Errorf("failed to decode manifest: %w", err)
+	}
+
+	// Delete layers
+	for _, layer := range manifest.Layers {
+		if err := cache.Delete(string(layer.Digest)); err != nil {
+			fmt.Printf("Warning: failed to delete chunk %s: %v\n", layer.Digest, err)
+		}
+	}
+
+	// Delete config
+	if err := cache.Delete(string(manifest.Config.Digest)); err != nil {
+		fmt.Printf("Warning: failed to delete config %s: %v\n", manifest.Config.Digest, err)
+	}
+
+	fmt.Println("Cache cleanup complete.")
 	return nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"filippo.io/age"
 )
@@ -66,4 +67,15 @@ func formatSize(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func defaultCacheDir() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(dir, "ocige")
+	}
+	// Fallback to home dir or temp if UserCacheDir fails
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".cache", "ocige")
+	}
+	return filepath.Join(os.TempDir(), "ocige-cache")
 }

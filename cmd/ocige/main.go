@@ -149,6 +149,39 @@ func main() {
 				Action: handleRemove,
 			},
 			{
+				Name:      "mount",
+				Usage:     "Mounts an OCI artifact as a read-only FUSE filesystem",
+				ArgsUsage: "<target> <mountpoint>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "identity",
+						Aliases: []string{"i"},
+						Usage:   "Path to age identity file",
+						Sources: cli.EnvVars("OCIGE_IDENTITY"),
+					},
+					&cli.StringFlag{
+						Name:    "cache-dir",
+						Usage:   "Cache directory for encrypted chunks",
+						Value:   defaultCacheDir(),
+						Sources: cli.EnvVars("OCIGE_CACHE_DIR"),
+					},
+					&cli.IntFlag{
+						Name:  "cache-size",
+						Usage: "Maximum cache size in MB",
+						Value: 1024,
+					},
+					&cli.BoolFlag{
+						Name:  "allow-other",
+						Usage: "Allow other users to access the mount",
+					},
+					&cli.BoolFlag{
+						Name:  "debug",
+						Usage: "Enable FUSE debug logging",
+					},
+				},
+				Action: handleMount,
+			},
+			{
 				Name:  "keygen",
 				Usage: "Generates a new PQ-safe key pair",
 				Flags: []cli.Flag{
@@ -159,6 +192,30 @@ func main() {
 					},
 				},
 				Action: handleKeygen,
+			},
+			{
+				Name:  "cache",
+				Usage: "Manage local chunk cache",
+				Commands: []*cli.Command{
+					{
+						Name:      "cleanup",
+						Usage:     "Removes cached chunks (global or per target)",
+						ArgsUsage: "[target]",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:    "cache-dir",
+								Usage:   "Cache directory for encrypted chunks",
+								Value:   defaultCacheDir(),
+								Sources: cli.EnvVars("OCIGE_CACHE_DIR"),
+							},
+							&cli.BoolFlag{
+								Name:  "insecure",
+								Usage: "Use plain HTTP for registry",
+							},
+						},
+						Action: handleCacheCleanup,
+					},
+				},
 			},
 		},
 	}
