@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,12 +23,13 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("target is required")
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("at least one file is required")
+		return fmt.Errorf("at least one file or '-' is required")
 	}
 	target := args[0]
 	files := args[1:]
 	recipientsFile := cmd.String("recipients")
 	chunkSizeMB := cmd.Int("chunk-size")
+	name := cmd.String("name")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
 	concurrency := int(cmd.Int("concurrency"))
@@ -50,14 +52,98 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	pusher.Silent = silent
 	pusher.Retries = retries
 
-	fmt.Printf("Pushing %v to %s...\n", files, target)
-	err = pusher.PushMultiple(ctx, files, recipients)
+	hasStdin := false
+	for _, f := range files {
+		if f == "-" {
+			hasStdin = true
+			break
+		}
+	}
+	if hasStdin && name == "" {
+		return fmt.Errorf("--name is required when pushing from stdin (-)")
+	}
+
+	fmt.Printf("Pushing to %s...\n", target)
+	err = pusher.PushMultipleWithStdin(ctx, files, name, recipients)
 	if err != nil {
 		return fmt.Errorf("push failed: %w", err)
 	}
 
 	fmt.Println("Push successful!")
 	return nil
+}
+
+func handleCat(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args().Slice()
+	if len(args) < 2 {
+		return fmt.Errorf("usage: ocige cat <target> <file>")
+	}
+	target := args[0]
+	filePath := args[1]
+	identityFile := cmd.String("identity")
+	force := cmd.Bool("force")
+
+	if identityFile == "" {
+		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
+	}
+
+	identities, err := parseIdentities(identityFile)
+	if err != nil {
+		return fmt.Errorf("error parsing identity: %w", err)
+	}
+
+	puller := ociregistry.NewPuller(target)
+	puller.PlainHTTP = cmd.Bool("insecure")
+	puller.DockerConfigPath = cmd.String("docker-config")
+	puller.Concurrency = 1
+	puller.Silent = true // We want clean output
+
+	index, vaultIdentity, err := puller.FetchIndex(ctx, identities)
+	if err != nil {
+		return err
+	}
+
+	var entry *ociregistry.FileEntry
+	for _, f := range index.Files {
+		if f.Path == filePath {
+			entry = &f
+			break
+		}
+	}
+
+	if entry == nil {
+		return fmt.Errorf("file %s not found in artifact", filePath)
+	}
+
+	sem := make(chan struct{}, 1)
+	fileReader, err := puller.PullFileInternal(ctx, *entry, vaultIdentity, ociregistry.NewProgressManager(true), sem)
+	if err != nil {
+		return err
+	}
+	defer fileReader.Close()
+
+	output := os.Stdout
+	if IsTerminal(output) && !force {
+		// Sniff content
+		buf := make([]byte, 512)
+		n, err := fileReader.Read(buf)
+		if err != nil && err != os.ErrClosed && err.Error() != "EOF" {
+			return fmt.Errorf("failed to read for content sniffing: %w", err)
+		}
+
+		if n > 0 && IsBinary(buf[:n]) {
+			fmt.Fprintf(os.Stderr, "Warning: file '%s' appears to be binary. Use --force to output to terminal anyway.\n", filePath)
+			return nil
+		}
+
+		// Write what we already read
+		if _, err := output.Write(buf[:n]); err != nil {
+			return err
+		}
+	}
+
+	_, err = io.Copy(output, fileReader)
+	return err
 }
 
 func handlePull(ctx context.Context, cmd *cli.Command) error {
@@ -198,11 +284,12 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("target is required")
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("at least one file is required")
+		return fmt.Errorf("at least one file or '-' is required")
 	}
 	target := args[0]
 	files := args[1:]
 	identityFile := cmd.String("identity")
+	name := cmd.String("name")
 	force := cmd.Bool("force")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
@@ -226,8 +313,19 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	pusher.Silent = silent
 	pusher.Retries = retries
 
-	fmt.Printf("Appending %v to %s...\n", files, target)
-	err = pusher.Append(ctx, files, identities, force)
+	hasStdin := false
+	for _, f := range files {
+		if f == "-" {
+			hasStdin = true
+			break
+		}
+	}
+	if hasStdin && name == "" {
+		return fmt.Errorf("--name is required when appending from stdin (-)")
+	}
+
+	fmt.Printf("Appending to %s...\n", target)
+	err = pusher.AppendWithStdin(ctx, files, name, identities, force)
 	if err != nil {
 		return fmt.Errorf("append failed: %w", err)
 	}

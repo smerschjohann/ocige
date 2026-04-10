@@ -38,6 +38,9 @@ echo "age1pq1..." > recipients.txt
 
 # Push files/folders to a registry
 ocige push --recipients recipients.txt ghcr.io/user/my-vault:v1 file.pdf data/
+
+# Push from stdin (requires --name)
+cat data.tar.gz | ocige push --recipients recipients.txt ghcr.io/user/my-vault:v1 - --name backup.tar.gz
 ```
 
 ### 3. Listing Contents
@@ -58,12 +61,26 @@ ocige pull --identity mykey.txt --output ./extracted ghcr.io/user/my-vault:v1
 ocige pull --identity mykey.txt --output ./extracted ghcr.io/user/my-vault:v1 file.pdf
 ```
 
+### 5. Streaming & Piping (Stdout)
+You can stream a single file directly to `stdout`.
+
+```bash
+# Cat a file to stdout (with automatic binary detection for terminals)
+ocige cat --identity mykey.txt ghcr.io/user/my-vault:v1 file.txt
+
+# Pipe to another command
+ocige cat --identity mykey.txt ghcr.io/user/my-vault:v1 backup.tar.gz | tar -xzP
+```
+
 ### 5. Managing Vaults (Append & Remove)
 Ocige allows you to add or remove files from an existing artifact without re-uploading every file.
 
 ```bash
 # Add a new file to the existing vault
 ocige append --identity mykey.txt ghcr.io/user/my-vault:v1 extra.txt
+
+# Append from stdin to an existing vault (requires --name)
+echo "More data" | ocige append --identity mykey.txt ghcr.io/user/my-vault:v1 - --name more.txt
 
 # Remove a file from the vault
 ocige remove --identity mykey.txt ghcr.io/user/my-vault:v1 file.pdf
@@ -120,6 +137,7 @@ COMMANDS:
    push     Pushes files to registry target
    pull     Pulls files from registry target
    ls       Lists files in the target
+   cat      Outputs the decrypted content of a file to stdout
    append   Adds files to an existing artifact
    rekey    Rotates the Vault Identity for a new recipients file
    remove   Removes files from an artifact

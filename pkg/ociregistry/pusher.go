@@ -41,8 +41,8 @@ func NewPusher(target string, chunkSize int64) *Pusher {
 	}
 }
 
-// PushMultiple uploads multiple paths as an encrypted OCI artifact using the Vault Identity.
-func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []age.Recipient) error {
+// PushMultipleWithStdin uploads multiple paths and optionally stdin as an encrypted OCI artifact.
+func (p *Pusher) PushMultipleWithStdin(ctx context.Context, paths []string, stdinName string, recipients []age.Recipient) error {
 	repo, err := p.GetRepository(ctx)
 	if err != nil {
 		return err
@@ -59,7 +59,7 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 	vaultKeySheafBuf := &bytes.Buffer{}
 	w, err := age.Encrypt(vaultKeySheafBuf, recipients...)
 	if err != nil {
-		return fmt.Errorf("failed to setup vault key encryption: %w", err)
+		return fmt.Errorf("failed setup vault key encryption: %w", err)
 	}
 	if _, err := io.WriteString(w, vaultIdentity.String()); err != nil {
 		return fmt.Errorf("failed to encrypt vault key: %w", err)
@@ -79,6 +79,22 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 
 	// 3. Collect and Push each file
 	for _, inputPath := range paths {
+		if inputPath == "-" {
+			g.Go(func() error {
+				pm.Message(fmt.Sprintf("Processing stdin as %s...", stdinName))
+				fileEntry, layers, err := p.pushReader(gCtx, repo, os.Stdin, stdinName, []age.Recipient{vaultRecipient}, pm, sem)
+				if err != nil {
+					return fmt.Errorf("failed to push stdin: %w", err)
+				}
+				mu.Lock()
+				index.Files = append(index.Files, *fileEntry)
+				allLayers = append(allLayers, layers...)
+				mu.Unlock()
+				return nil
+			})
+			continue
+		}
+
 		inputPath = filepath.Clean(inputPath)
 		baseDir := filepath.Dir(inputPath)
 
@@ -146,8 +162,13 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 	return p.pushManifest(ctx, repo, configDesc, allLayers)
 }
 
-// Append adds files to an existing artifact.
-func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Identity, force bool) error {
+// PushMultiple uploads multiple paths as an encrypted OCI artifact using the Vault Identity.
+func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []age.Recipient) error {
+	return p.PushMultipleWithStdin(ctx, paths, "", recipients)
+}
+
+// AppendWithStdin adds files and optionally stdin to an existing artifact.
+func (p *Pusher) AppendWithStdin(ctx context.Context, paths []string, stdinName string, identities []age.Identity, force bool) error {
 	pm := NewProgressManager(p.Silent)
 	defer pm.Wait()
 
@@ -171,6 +192,31 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 	sem := make(chan struct{}, p.Concurrency)
 
 	for _, inputPath := range paths {
+		if inputPath == "-" {
+			if existingFiles[stdinName] && !force {
+				return fmt.Errorf("file %s (from stdin) already exists in artifact (use force to overwrite)", stdinName)
+			}
+			pm.Message(fmt.Sprintf("Processing stdin as %s...", stdinName))
+			fileEntry, layers, err := p.pushReader(ctx, repo, os.Stdin, stdinName, []age.Recipient{vaultRecipient}, pm, sem)
+			if err != nil {
+				return err
+			}
+
+			found := false
+			for i, f := range index.Files {
+				if f.Path == stdinName {
+					index.Files[i] = *fileEntry
+					found = true
+					break
+				}
+			}
+			if !found {
+				index.Files = append(index.Files, *fileEntry)
+			}
+			newLayers = append(newLayers, layers...)
+			continue
+		}
+
 		inputPath = filepath.Clean(inputPath)
 		baseDir := filepath.Dir(inputPath)
 
@@ -247,6 +293,11 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 	}
 
 	return p.pushManifest(ctx, repo, configDesc, allLayers)
+}
+
+// Append adds files to an existing artifact.
+func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Identity, force bool) error {
+	return p.AppendWithStdin(ctx, paths, "", identities, force)
 }
 
 // Rekey changes recipients by re-encrypting the Vault Secret Key.
@@ -434,6 +485,11 @@ func (p *Pusher) pushManifest(ctx context.Context, repo *remote.Repository, conf
 	return nil
 }
 
+type PlaintextStats struct {
+	Size   int64
+	SHA256 string
+}
+
 func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, absPath string, relPath string, recipients []age.Recipient, pm *ProgressManager, sem chan struct{}) (*FileEntry, []ocispec.Descriptor, error) {
 	f, err := os.Open(absPath)
 	if err != nil {
@@ -441,12 +497,12 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 	}
 	defer f.Close()
 
-	fileHash, fileSize, err := HashFile(absPath)
-	if err != nil {
-		return nil, nil, err
-	}
+	return p.pushReader(ctx, repo, f, relPath, recipients, pm, sem)
+}
 
-	encReader, headerExt := p.encryptStream(f, recipients)
+func (p *Pusher) pushReader(ctx context.Context, repo *remote.Repository, r io.Reader, relPath string, recipients []age.Recipient, pm *ProgressManager, sem chan struct{}) (*FileEntry, []ocispec.Descriptor, error) {
+	stats := &PlaintextStats{}
+	encReader, headerExt, finalizeStats := p.encryptStream(r, recipients, stats)
 
 	var layers []ocispec.Descriptor
 	var chunks []BlobChunk
@@ -460,7 +516,6 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		if err != nil {
 			return nil, nil, err
 		}
-		// We don't defer os.Remove here because we want to remove it after upload in the goroutine
 
 		n, err := io.CopyN(tempFile, encReader, p.ChunkSize)
 		if n == 0 {
@@ -495,7 +550,7 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 
 		currentOrder := order
 		tempPath := tempFile.Name()
-		tempFile.Close() // Close it before uploading (repo.Push will open it or take it as reader)
+		tempFile.Close()
 
 		g.Go(func() error {
 			sem <- struct{}{}
@@ -557,33 +612,51 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		return nil, nil, err
 	}
 
+	// Wait for the encryption goroutine to finish and provide final stats
+	finalizeStats()
+
 	return &FileEntry{
 		Path:   relPath,
 		Header: base64.StdEncoding.EncodeToString(headerExt.Header),
 		Chunks: chunks,
-		Size:   fileSize,
-		SHA256: fileHash,
+		Size:   stats.Size,
+		SHA256: stats.SHA256,
 	}, layers, nil
 }
 
-func (p *Pusher) encryptStream(r io.Reader, recipients []age.Recipient) (io.Reader, *ageutils.HeaderExtractor) {
+func (p *Pusher) encryptStream(r io.Reader, recipients []age.Recipient, stats *PlaintextStats) (io.Reader, *ageutils.HeaderExtractor, func()) {
 	pr, pw := io.Pipe()
 	headerExt := ageutils.NewHeaderExtractor(pw)
+	done := make(chan struct{})
 
 	go func() {
 		defer pw.Close()
+		defer close(done)
+
+		hasher := sha256.New()
+		tr := io.TeeReader(r, hasher)
+
 		ageWriter, err := age.Encrypt(headerExt, recipients...)
 		if err != nil {
 			pw.CloseWithError(err)
 			return
 		}
-		if _, err := io.Copy(ageWriter, r); err != nil {
+
+		size, err := io.Copy(ageWriter, tr)
+		if err != nil {
 			ageWriter.Close()
 			pw.CloseWithError(err)
 			return
 		}
 		ageWriter.Close()
+
+		stats.Size = size
+		stats.SHA256 = "sha256:" + hex.EncodeToString(hasher.Sum(nil))
 	}()
 
-	return pr, headerExt
+	finalize := func() {
+		<-done
+	}
+
+	return pr, headerExt, finalize
 }

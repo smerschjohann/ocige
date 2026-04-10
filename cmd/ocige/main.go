@@ -59,6 +59,10 @@ func main() {
 						Value: 2000,
 						Usage: "Chunk size in MB",
 					},
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "Filename to use for stdin (-) or to rename a single file",
+					},
 				},
 				Action: handlePush,
 			},
@@ -103,6 +107,25 @@ func main() {
 				Action: handleLs,
 			},
 			{
+				Name:      "cat",
+				Usage:     "Outputs the decrypted content of a file to stdout",
+				ArgsUsage: "<target> <file>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "identity",
+						Aliases: []string{"i"},
+						Usage:   "Path to age identity file",
+						Sources: cli.EnvVars("OCIGE_IDENTITY"),
+					},
+					&cli.BoolFlag{
+						Name:    "force",
+						Aliases: []string{"y"},
+						Usage:   "Bypass terminal check for binary content",
+					},
+				},
+				Action: handleCat,
+			},
+			{
 				Name:      "append",
 				Usage:     "Adds files to an existing artifact",
 				ArgsUsage: "<target> <file...>",
@@ -116,6 +139,10 @@ func main() {
 					&cli.BoolFlag{
 						Name:  "force",
 						Usage: "Overwrite existing files without warning",
+					},
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "Filename to use for stdin (-) or to rename a single file",
 					},
 				},
 				Action: handleAppend,

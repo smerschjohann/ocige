@@ -79,3 +79,13 @@ func defaultCacheDir() string {
 	}
 	return filepath.Join(os.TempDir(), "ocige-cache")
 }
+
+func IsBinary(data []byte) bool {
+	// A simple but effective heuristic: check for null bytes
+	for _, b := range data {
+		if b == 0 {
+			return true
+		}
+	}
+	return false
+}
