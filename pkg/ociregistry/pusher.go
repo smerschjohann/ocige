@@ -73,6 +73,7 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(p.Concurrency)
+	sem := make(chan struct{}, p.Concurrency)
 
 	// 3. Collect and Push each file
 	for _, inputPath := range paths {
@@ -92,7 +93,7 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 			g.Go(func() error {
 				pm.Message(fmt.Sprintf("Processing %s...", relPath))
 				
-				fileEntry, layers, err := p.pushSingleFile(gCtx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm)
+				fileEntry, layers, err := p.pushSingleFile(gCtx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm, sem)
 				if err != nil {
 					return fmt.Errorf("failed to push %s: %w", relPath, err)
 				}
@@ -165,6 +166,7 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 	}
 
 	var newLayers []ocispec.Descriptor
+	sem := make(chan struct{}, p.Concurrency)
 	
 	for _, inputPath := range paths {
 		inputPath = filepath.Clean(inputPath)
@@ -185,7 +187,7 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 
 			pm.Message(fmt.Sprintf("Processing %s...", relPath))
 			
-			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm)
+			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm, sem)
 			if err != nil {
 				return err
 			}
@@ -428,7 +430,7 @@ func (p *Pusher) pushManifest(ctx context.Context, repo *remote.Repository, conf
 	return nil
 }
 
-func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, absPath string, relPath string, recipients []age.Recipient, pm *ProgressManager) (*FileEntry, []ocispec.Descriptor, error) {
+func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, absPath string, relPath string, recipients []age.Recipient, pm *ProgressManager, sem chan struct{}) (*FileEntry, []ocispec.Descriptor, error) {
 	f, err := os.Open(absPath)
 	if err != nil {
 		return nil, nil, err
@@ -448,7 +450,6 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 	order := 0
 
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(p.Concurrency)
 
 	for {
 		tempFile, err := os.CreateTemp("", "ocige-chunk-*")
@@ -493,6 +494,9 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		tempFile.Close() // Close it before uploading (repo.Push will open it or take it as reader)
 
 		g.Go(func() error {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			f, err := os.Open(tempPath)
 			if err != nil {
 				return err

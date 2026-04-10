@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"filippo.io/age"
@@ -97,6 +95,7 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
+	var filesToPull []ociregistry.FileEntry
 	for _, entry := range index.Files {
 		// If specific files were requested, only pull those
 		if len(filterFiles) > 0 {
@@ -111,33 +110,16 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 				continue
 			}
 		}
+		filesToPull = append(filesToPull, entry)
+	}
 
-		fmt.Printf("  -> Pulling %s...\n", entry.Path)
-		fileReader, err := puller.PullFile(ctx, entry, vaultIdentity)
-		if err != nil {
-			fmt.Printf("      Failed to decrypt %s: %v\n", entry.Path, err)
-			continue
-		}
+	if len(filesToPull) == 0 {
+		fmt.Println("No matching files found.")
+		return nil
+	}
 
-		outPath := filepath.Join(destDir, entry.Path)
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			fmt.Printf("      Failed to create directory for %s: %v\n", entry.Path, err)
-			fileReader.Close()
-			continue
-		}
-
-		out, err := os.Create(outPath)
-		if err != nil {
-			fmt.Printf("      Failed to create file %s: %v\n", outPath, err)
-			fileReader.Close()
-			continue
-		}
-
-		if _, err := io.Copy(out, fileReader); err != nil {
-			fmt.Printf("      Failed to stream %s: %v\n", entry.Path, err)
-		}
-		out.Close()
-		fileReader.Close()
+	if err := puller.PullMultiple(ctx, filesToPull, vaultIdentity, destDir); err != nil {
+		return err
 	}
 
 	fmt.Println("Pull successful!")

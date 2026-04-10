@@ -74,3 +74,14 @@ func (m *ProgressManager) Message(msg string) {
 		fmt.Println(msg)
 	}
 }
+
+func (m *ProgressManager) AbortAll() {
+	if m.silent || m.p == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, bar := range m.bars {
+		bar.Abort(false)
+	}
+}
