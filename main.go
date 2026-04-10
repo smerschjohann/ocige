@@ -79,7 +79,18 @@ func parseRecipients(path string) ([]age.Recipient, error) {
 	}
 	defer f.Close()
 
-	return age.ParseRecipients(f)
+	recipients, err := age.ParseRecipients(f)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range recipients {
+		if _, ok := r.(*age.HybridRecipient); !ok {
+			return nil, fmt.Errorf("non-PQ recipient found: only Hybrid (PQ-safe) recipients are allowed")
+		}
+	}
+
+	return recipients, nil
 }
 
 func handlePull(args []string) {
@@ -159,5 +170,16 @@ func parseIdentities(path string) ([]age.Identity, error) {
 	}
 	defer f.Close()
 
-	return age.ParseIdentities(f)
+	identities, err := age.ParseIdentities(f)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, i := range identities {
+		if _, ok := i.(*age.HybridIdentity); !ok {
+			return nil, fmt.Errorf("non-PQ identity found: only Hybrid (PQ-safe) identities are allowed")
+		}
+	}
+
+	return identities, nil
 }
