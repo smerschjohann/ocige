@@ -18,11 +18,15 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote"
 	"filippo.io/age"
+	"golang.org/x/sync/errgroup"
+	"sync"
 )
 
 type Pusher struct {
 	BaseClient
-	ChunkSize int64
+	ChunkSize   int64
+	Concurrency int
+	Silent      bool
 }
 
 func NewPusher(target string, chunkSize int64) *Pusher {
@@ -30,7 +34,8 @@ func NewPusher(target string, chunkSize int64) *Pusher {
 		BaseClient: BaseClient{
 			RepoTarget: target,
 		},
-		ChunkSize: chunkSize,
+		ChunkSize:   chunkSize,
+		Concurrency: 5,
 	}
 }
 
@@ -61,8 +66,15 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 
 	var allLayers []ocispec.Descriptor
 	index := Index{Files: []FileEntry{}}
+	var mu sync.Mutex
 
-	// 3. Encrypt and Push each file for the Vault Recipient
+	pm := NewProgressManager(p.Silent)
+	defer pm.Wait()
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(p.Concurrency)
+
+	// 3. Collect and Push each file
 	for _, inputPath := range paths {
 		inputPath = filepath.Clean(inputPath)
 		baseDir := filepath.Dir(inputPath)
@@ -76,15 +88,21 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 			}
 
 			relPath, _ := filepath.Rel(baseDir, fpath)
-			fmt.Printf("Processing %s (as %s)...\n", fpath, relPath)
 			
-			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient})
-			if err != nil {
-				return err
-			}
+			g.Go(func() error {
+				pm.Message(fmt.Sprintf("Processing %s...", relPath))
+				
+				fileEntry, layers, err := p.pushSingleFile(gCtx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm)
+				if err != nil {
+					return fmt.Errorf("failed to push %s: %w", relPath, err)
+				}
 
-			index.Files = append(index.Files, *fileEntry)
-			allLayers = append(allLayers, layers...)
+				mu.Lock()
+				index.Files = append(index.Files, *fileEntry)
+				allLayers = append(allLayers, layers...)
+				mu.Unlock()
+				return nil
+			})
 			return nil
 		})
 		if err != nil {
@@ -92,7 +110,12 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 		}
 	}
 
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
 	// 4. Push Index
+	pm.Message("Finalizing Index...")
 	indexDesc, err := p.pushIndex(ctx, repo, &index, vaultRecipient)
 	if err != nil {
 		return err
@@ -100,6 +123,7 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 	allLayers = append([]ocispec.Descriptor{indexDesc}, allLayers...)
 
 	// 5. Push Config
+	pm.Message("Pushing Config...")
 	config := Config{
 		Version: "1.0",
 		Vault: VaultMeta{
@@ -121,6 +145,9 @@ func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []
 
 // Append adds files to an existing artifact.
 func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Identity, force bool) error {
+	pm := NewProgressManager(p.Silent)
+	defer pm.Wait()
+
 	index, vaultIdentity, config, manifest, err := p.FetchIndex(ctx, identities)
 	if err != nil {
 		return fmt.Errorf("failed to fetch existing index: %w", err)
@@ -156,9 +183,9 @@ func (p *Pusher) Append(ctx context.Context, paths []string, identities []age.Id
 				return fmt.Errorf("file %s already exists in artifact (use force to overwrite)", relPath)
 			}
 
-			fmt.Printf("Processing %s (as %s)...\n", fpath, relPath)
+			pm.Message(fmt.Sprintf("Processing %s...", relPath))
 			
-			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient})
+			fileEntry, layers, err := p.pushSingleFile(ctx, repo, fpath, relPath, []age.Recipient{vaultRecipient}, pm)
 			if err != nil {
 				return err
 			}
@@ -401,7 +428,7 @@ func (p *Pusher) pushManifest(ctx context.Context, repo *remote.Repository, conf
 	return nil
 }
 
-func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, absPath string, relPath string, recipients []age.Recipient) (*FileEntry, []ocispec.Descriptor, error) {
+func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, absPath string, relPath string, recipients []age.Recipient, pm *ProgressManager) (*FileEntry, []ocispec.Descriptor, error) {
 	f, err := os.Open(absPath)
 	if err != nil {
 		return nil, nil, err
@@ -417,18 +444,23 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 
 	var layers []ocispec.Descriptor
 	var chunks []BlobChunk
+	var mu sync.Mutex
 	order := 0
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(p.Concurrency)
 
 	for {
 		tempFile, err := os.CreateTemp("", "ocige-chunk-*")
 		if err != nil {
 			return nil, nil, err
 		}
-		defer os.Remove(tempFile.Name())
-
+		// We don't defer os.Remove here because we want to remove it after upload in the goroutine
+		
 		n, err := io.CopyN(tempFile, encReader, p.ChunkSize)
 		if n == 0 {
 			tempFile.Close()
+			os.Remove(tempFile.Name())
 			if err == io.EOF {
 				break
 			}
@@ -441,15 +473,12 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		
 		hasher := sha256.New()
 		if _, err := io.Copy(hasher, tempFile); err != nil {
+			tempFile.Close()
 			return nil, nil, err
 		}
 		chunkDigest := digest.NewDigest("sha256", hasher)
 		chunkSize := n
 
-		if _, err := tempFile.Seek(0, 0); err != nil {
-			return nil, nil, err
-		}
-		
 		desc := ocispec.Descriptor{
 			MediaType: MediaTypeLayer,
 			Digest:    chunkDigest,
@@ -459,25 +488,47 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 			},
 		}
 
-		err = repo.Push(ctx, desc, tempFile)
-		if err != nil {
-			tempFile.Close()
-			return nil, nil, err
-		}
-		tempFile.Close()
+		currentOrder := order
+		tempPath := tempFile.Name()
+		tempFile.Close() // Close it before uploading (repo.Push will open it or take it as reader)
 
+		g.Go(func() error {
+			f, err := os.Open(tempPath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			defer os.Remove(tempPath)
+
+			label := fmt.Sprintf("%s [%d]", relPath, currentOrder)
+			tr := pm.TrackReader(fmt.Sprintf("%s-%d", relPath, currentOrder), label, chunkSize, f)
+			defer tr.Close()
+
+			err = repo.Push(gCtx, desc, tr)
+			if err != nil {
+				return fmt.Errorf("failed to push chunk %d: %w", currentOrder, err)
+			}
+			return nil
+		})
+
+		mu.Lock()
 		layers = append(layers, desc)
 		chunks = append(chunks, BlobChunk{
 			Digest:         string(chunkDigest),
-			Order:          order,
+			Order:          currentOrder,
 			SizeEncrypted:  chunkSize,
 			IntegritySHA256: hex.EncodeToString(hasher.Sum(nil)),
 		})
+		mu.Unlock()
 
 		order++
 		if err == io.EOF {
 			break
 		}
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
 	}
 
 	return &FileEntry{

@@ -10,10 +10,15 @@ import (
 	"filippo.io/age"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
+	"os"
+	"sync"
 )
 
 type Puller struct {
 	BaseClient
+	Concurrency int
+	Silent      bool
 }
 
 func NewPuller(target string) *Puller {
@@ -22,6 +27,7 @@ func NewPuller(target string) *Puller {
 			RepoTarget: target,
 			PlainHTTP:  false,
 		},
+		Concurrency: 5,
 	}
 }
 
@@ -44,21 +50,97 @@ func (p *Puller) PullFile(ctx context.Context, entry FileEntry, vaultIdentity ag
 	}
 
 	pr, pw := io.Pipe()
+	pm := NewProgressManager(p.Silent)
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(p.Concurrency)
+
 	go func() {
 		defer pw.Close()
-		for _, chunk := range entry.Chunks {
+		defer pm.Wait()
+
+		type chunkResult struct {
+			tempPath string
+			err      error
+		}
+		
+		results := make(map[int]string)
+		var mu sync.Mutex
+		nextOrder := 0
+		
+		// To avoid overwhelming the results map, we use a channel to communicate finished chunks
+		finishedChunks := make(chan int, len(entry.Chunks))
+
+		for i, chunk := range entry.Chunks {
 			desc := ocispec.Descriptor{
 				MediaType: MediaTypeLayer,
 				Digest:    digest.Digest(chunk.Digest),
 				Size:      chunk.SizeEncrypted,
 			}
-			rc, err := repo.Fetch(ctx, desc)
-			if err != nil {
-				pw.CloseWithError(err)
-				return
+			
+			chunkOrder := i
+			g.Go(func() error {
+				rc, err := repo.Fetch(gCtx, desc)
+				if err != nil {
+					return err
+				}
+				defer rc.Close()
+
+				label := fmt.Sprintf("%s [%d]", entry.Path, chunkOrder)
+				tr := pm.TrackReader(fmt.Sprintf("%s-%d", entry.Path, chunkOrder), label, chunk.SizeEncrypted, rc)
+				defer tr.Close()
+				
+				tempFile, err := os.CreateTemp("", "ocige-pull-chunk-*")
+				if err != nil {
+					return err
+				}
+				tempPath := tempFile.Name()
+				
+				if _, err := io.Copy(tempFile, tr); err != nil {
+					tempFile.Close()
+					os.Remove(tempPath)
+					return err
+				}
+				tempFile.Close()
+
+				mu.Lock()
+				results[chunkOrder] = tempPath
+				mu.Unlock()
+				finishedChunks <- chunkOrder
+				return nil
+			})
+		}
+
+		// Wait for chunks and stream them in order
+		for nextOrder < len(entry.Chunks) {
+			mu.Lock()
+			tempPath, ok := results[nextOrder]
+			mu.Unlock()
+
+			if ok {
+				f, err := os.Open(tempPath)
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+				io.Copy(pw, f)
+				f.Close()
+				os.Remove(tempPath)
+				nextOrder++
+			} else {
+				// Wait for a chunk to be finished
+				select {
+				case <-finishedChunks:
+					continue
+				case <-gCtx.Done():
+					pw.CloseWithError(gCtx.Err())
+					return
+				}
 			}
-			io.Copy(pw, rc)
-			rc.Close()
+		}
+
+		if err := g.Wait(); err != nil {
+			pw.CloseWithError(err)
 		}
 	}()
 

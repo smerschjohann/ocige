@@ -22,6 +22,19 @@ func main() {
 				Usage:   "Path to docker config.json",
 				Sources: cli.EnvVars("DOCKER_CONFIG"),
 			},
+			&cli.IntFlag{
+				Name:    "concurrency",
+				Aliases: []string{"j"},
+				Value:   5,
+				Usage:   "Number of parallel jobs",
+				Sources: cli.EnvVars("OCIGE_CONCURRENCY"),
+			},
+			&cli.BoolFlag{
+				Name:    "silent",
+				Aliases: []string{"s"},
+				Usage:   "Disable progress visualization",
+				Sources: cli.EnvVars("OCIGE_SILENT"),
+			},
 		},
 		Commands: []*cli.Command{
 			{
@@ -73,6 +86,12 @@ func main() {
 						Aliases: []string{"i"},
 						Usage:   "Path to age identity file",
 						Sources: cli.EnvVars("OCIGE_IDENTITY"),
+					},
+					&cli.StringFlag{
+						Name:    "output",
+						Aliases: []string{"o"},
+						Usage:   "Output format (json, long, table)",
+						Value:   "table",
 					},
 				},
 				Action: handleLs,

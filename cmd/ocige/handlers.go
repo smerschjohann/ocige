@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,8 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	chunkSizeMB := cmd.Int("chunk-size")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	concurrency := int(cmd.Int("concurrency"))
+	silent := cmd.Bool("silent")
 
 	if recipientsFile == "" {
 		return fmt.Errorf("recipients file is required (use -R or OCIGE_RECIPIENTS)")
@@ -40,6 +43,8 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	pusher := ociregistry.NewPusher(target, int64(chunkSizeMB)*1024*1024)
 	pusher.PlainHTTP = insecure
 	pusher.DockerConfigPath = dockerConfig
+	pusher.Concurrency = concurrency
+	pusher.Silent = silent
 
 	fmt.Printf("Pushing %v to %s...\n", files, target)
 	err = pusher.PushMultiple(ctx, files, recipients)
@@ -62,6 +67,8 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 	destDir := cmd.String("output")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	concurrency := int(cmd.Int("concurrency"))
+	silent := cmd.Bool("silent")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -75,6 +82,8 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 	puller := ociregistry.NewPuller(target)
 	puller.PlainHTTP = insecure
 	puller.DockerConfigPath = dockerConfig
+	puller.Concurrency = concurrency
+	puller.Silent = silent
 
 	fmt.Printf("Fetching index and unlocking vault from %s...\n", target)
 	index, vaultIdentity, err := puller.FetchIndex(ctx, identities)
@@ -144,6 +153,9 @@ func handleLs(ctx context.Context, cmd *cli.Command) error {
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	concurrency := int(cmd.Int("concurrency"))
+	silent := cmd.Bool("silent")
+	outputFormat := cmd.String("output")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -157,18 +169,38 @@ func handleLs(ctx context.Context, cmd *cli.Command) error {
 	puller := ociregistry.NewPuller(target)
 	puller.PlainHTTP = insecure
 	puller.DockerConfigPath = dockerConfig
+	puller.Concurrency = concurrency
+	puller.Silent = silent
 
-	fmt.Printf("Unlocking vault and fetching index from %s...\n", target)
+	if outputFormat != "json" {
+		fmt.Printf("Unlocking vault and fetching index from %s...\n", target)
+	}
 	index, _, err := puller.FetchIndex(ctx, identities)
 	if err != nil {
 		return fmt.Errorf("failed to unlock vault or fetch index: %w", err)
 	}
 
-	fmt.Printf("\n%-40s %-10s %s\n", "PATH", "SIZE", "SHA256 (Original)")
+	if outputFormat == "json" {
+		out, err := json.MarshalIndent(index.Files, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+
+	fmt.Printf("\n%-40s %-10s %s\n", "PATH", "SIZE", "SHA256")
 	fmt.Println(strings.Repeat("-", 80))
 	for _, f := range index.Files {
 		sizeStr := formatSize(f.Size)
-		fmt.Printf("%-40s %-10s %s\n", f.Path, sizeStr, f.SHA256[:12])
+		displayHash := f.SHA256
+		if strings.HasPrefix(displayHash, "sha256:") {
+			displayHash = displayHash[7:]
+		}
+		if outputFormat != "long" && len(displayHash) > 12 {
+			displayHash = displayHash[:12]
+		}
+		fmt.Printf("%-40s %-10s %s\n", f.Path, sizeStr, displayHash)
 	}
 	return nil
 }
@@ -187,6 +219,8 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	force := cmd.Bool("force")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	concurrency := int(cmd.Int("concurrency"))
+	silent := cmd.Bool("silent")
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -200,6 +234,8 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	pusher := ociregistry.NewPusher(target, 100*1024*1024)
 	pusher.PlainHTTP = insecure
 	pusher.DockerConfigPath = dockerConfig
+	pusher.Concurrency = concurrency
+	pusher.Silent = silent
 
 	fmt.Printf("Appending %v to %s...\n", files, target)
 	err = pusher.Append(ctx, files, identities, force)
