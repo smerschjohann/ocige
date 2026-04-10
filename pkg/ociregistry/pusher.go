@@ -27,6 +27,7 @@ type Pusher struct {
 	ChunkSize   int64
 	Concurrency int
 	Silent      bool
+	Retries     int
 }
 
 func NewPusher(target string, chunkSize int64) *Pusher {
@@ -496,23 +497,41 @@ func (p *Pusher) pushSingleFile(ctx context.Context, repo *remote.Repository, ab
 		g.Go(func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-
-			f, err := os.Open(tempPath)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
 			defer os.Remove(tempPath)
 
-			label := fmt.Sprintf("%s [%d]", relPath, currentOrder)
-			tr := pm.TrackReader(fmt.Sprintf("%s-%d", relPath, currentOrder), label, chunkSize, f)
-			defer tr.Close()
-
-			err = repo.Push(gCtx, desc, tr)
-			if err != nil {
-				return fmt.Errorf("failed to push chunk %d: %w", currentOrder, err)
+			var lastErr error
+			maxAttempts := p.Retries + 1
+			if maxAttempts < 1 {
+				maxAttempts = 1
 			}
-			return nil
+
+			for attempt := 0; attempt < maxAttempts; attempt++ {
+				if err := gCtx.Err(); err != nil {
+					return err
+				}
+
+				f, err := os.Open(tempPath)
+				if err != nil {
+					return err
+				}
+
+				label := fmt.Sprintf("%s [%d]", relPath, currentOrder)
+				if attempt > 0 {
+					label += fmt.Sprintf(" (retry %d)", attempt)
+				}
+				
+				tr := pm.TrackReader(fmt.Sprintf("%s-%d-%d", relPath, currentOrder, attempt), label, chunkSize, f)
+				
+				err = repo.Push(gCtx, desc, tr)
+				tr.Close()
+				f.Close()
+				
+				if err == nil {
+					return nil
+				}
+				lastErr = err
+			}
+			return fmt.Errorf("failed to push chunk %d after %d retries: %w", currentOrder, p.Retries, lastErr)
 		})
 
 		mu.Lock()

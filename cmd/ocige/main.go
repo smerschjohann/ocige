@@ -35,6 +35,12 @@ func main() {
 				Usage:   "Disable progress visualization",
 				Sources: cli.EnvVars("OCIGE_SILENT"),
 			},
+			&cli.IntFlag{
+				Name:    "retries",
+				Value:   2,
+				Usage:   "Number of retries for failed network chunks",
+				Sources: cli.EnvVars("OCIGE_RETRIES"),
+			},
 		},
 		Commands: []*cli.Command{
 			{

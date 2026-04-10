@@ -22,6 +22,7 @@ type Puller struct {
 	BaseClient
 	Concurrency int
 	Silent      bool
+	Retries     int
 }
 
 func NewPuller(target string) *Puller {
@@ -131,7 +132,11 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 				defer func() { <-sem }()
 				
 				var lastErr error
-				for retry := 0; retry < 3; retry++ {
+				maxAttempts := p.Retries + 1
+				if maxAttempts < 1 {
+					maxAttempts = 1
+				}
+				for attempt := 0; attempt < maxAttempts; attempt++ {
 					if err := gCtx.Err(); err != nil {
 						return err
 					}
@@ -143,10 +148,10 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 					}
 
 					label := fmt.Sprintf("%s [%d]", entry.Path, chunkOrder)
-					if retry > 0 {
-						label += fmt.Sprintf(" (retry %d)", retry)
+					if attempt > 0 {
+						label += fmt.Sprintf(" (retry %d)", attempt)
 					}
-					tr := pm.TrackReader(fmt.Sprintf("%s-%d-%d", entry.Path, chunkOrder, retry), label, chunk.SizeEncrypted, rc)
+					tr := pm.TrackReader(fmt.Sprintf("%s-%d-%d", entry.Path, chunkOrder, attempt), label, chunk.SizeEncrypted, rc)
 
 					hasher := sha256.New()
 					
@@ -214,7 +219,7 @@ func (p *Puller) PullFileInternal(ctx context.Context, entry FileEntry, vaultIde
 					mu.Unlock()
 					return nil
 				}
-				return fmt.Errorf("failed to fetch chunk %d after 3 retries: %w", chunkOrder, lastErr)
+				return fmt.Errorf("failed to fetch chunk %d after %d retries: %w", chunkOrder, p.Retries, lastErr)
 			})
 		}
 

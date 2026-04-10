@@ -28,6 +28,7 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	dockerConfig := cmd.String("docker-config")
 	concurrency := int(cmd.Int("concurrency"))
 	silent := cmd.Bool("silent")
+	retries := int(cmd.Int("retries"))
 
 	if recipientsFile == "" {
 		return fmt.Errorf("recipients file is required (use -R or OCIGE_RECIPIENTS)")
@@ -43,6 +44,7 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 	pusher.DockerConfigPath = dockerConfig
 	pusher.Concurrency = concurrency
 	pusher.Silent = silent
+	pusher.Retries = retries
 
 	fmt.Printf("Pushing %v to %s...\n", files, target)
 	err = pusher.PushMultiple(ctx, files, recipients)
@@ -67,6 +69,7 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 	dockerConfig := cmd.String("docker-config")
 	concurrency := int(cmd.Int("concurrency"))
 	silent := cmd.Bool("silent")
+	retries := int(cmd.Int("retries"))
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -82,6 +85,7 @@ func handlePull(ctx context.Context, cmd *cli.Command) error {
 	puller.DockerConfigPath = dockerConfig
 	puller.Concurrency = concurrency
 	puller.Silent = silent
+	puller.Retries = retries
 
 	fmt.Printf("Fetching index and unlocking vault from %s...\n", target)
 	index, vaultIdentity, err := puller.FetchIndex(ctx, identities)
@@ -203,6 +207,7 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	dockerConfig := cmd.String("docker-config")
 	concurrency := int(cmd.Int("concurrency"))
 	silent := cmd.Bool("silent")
+	retries := int(cmd.Int("retries"))
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -218,6 +223,7 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	pusher.DockerConfigPath = dockerConfig
 	pusher.Concurrency = concurrency
 	pusher.Silent = silent
+	pusher.Retries = retries
 
 	fmt.Printf("Appending %v to %s...\n", files, target)
 	err = pusher.Append(ctx, files, identities, force)
@@ -241,6 +247,7 @@ func handleRekey(ctx context.Context, cmd *cli.Command) error {
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	retries := int(cmd.Int("retries"))
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -259,6 +266,7 @@ func handleRekey(ctx context.Context, cmd *cli.Command) error {
 	pusher := ociregistry.NewPusher(target, 0)
 	pusher.PlainHTTP = insecure
 	pusher.DockerConfigPath = dockerConfig
+	pusher.Retries = retries
 
 	fmt.Printf("Rekeying artifact at %s...\n", target)
 	err = pusher.Rekey(ctx, identities, newRecipients)
@@ -282,6 +290,7 @@ func handleRemove(ctx context.Context, cmd *cli.Command) error {
 	identityFile := cmd.String("identity")
 	insecure := cmd.Bool("insecure")
 	dockerConfig := cmd.String("docker-config")
+	retries := int(cmd.Int("retries"))
 
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
@@ -295,6 +304,7 @@ func handleRemove(ctx context.Context, cmd *cli.Command) error {
 	pusher := ociregistry.NewPusher(target, 0)
 	pusher.PlainHTTP = insecure
 	pusher.DockerConfigPath = dockerConfig
+	pusher.Retries = retries
 
 	fmt.Printf("Removing %v from %s...\n", files, target)
 	err = pusher.Remove(ctx, identities, files)
