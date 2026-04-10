@@ -69,12 +69,27 @@ ocige append --identity mykey.txt ghcr.io/user/my-vault:v1 extra.txt
 ocige remove --identity mykey.txt ghcr.io/user/my-vault:v1 file.pdf
 ```
 
-### 6. Rotating Access (Rekeying)
-If you want to add or revoke access for certain recipients, you can rotate the vault encryption for a new recipients list without touching the data layers.
+### 7. FUSE Mount (On-Demand Access)
+Ocige can mount an encrypted artifact as a local read-only filesystem. Files are decrypted on-demand as they are accessed, and chunks are cached locally for performance.
 
 ```bash
-# Update the vault to a new list of recipients
-ocige rekey --identity mykey.txt ghcr.io/user/my-vault:v1 new_recipients.txt
+# Mount a vault to a local directory
+ocige mount --identity mykey.txt ghcr.io/user/my-vault:v1 /mnt/ocige
+
+# Access files like a regular directory
+ls /mnt/ocige
+cat /mnt/ocige/file.pdf
+```
+
+### 8. Cache Management
+Chunks downloaded during `mount` or `pull` are stored in a persistent local cache. You can manage this cache using the `cache` command.
+
+```bash
+# Clear the entire local cache
+ocige cache cleanup
+
+# Clear cache only for a specific artifact
+ocige cache cleanup ghcr.io/user/my-vault:v1
 ```
 
 ### Environment Variables
@@ -84,6 +99,9 @@ For convenience, you can set environment variables to avoid passing flags repeat
 | :--- | :--- | :--- |
 | `OCIGE_IDENTITY` | `--identity`, `-i` | Path to your secret identity file (used for decryption/listing). |
 | `OCIGE_RECIPIENTS` | `--recipients`, `-R` | Path to the public recipients file (used for initial push). |
+| `OCIGE_CACHE_DIR` | `--cache-dir` | Path to the local chunk cache (default: `~/.cache/ocige`). |
+| `OCIGE_CONCURRENCY` | `--concurrency`, `-j`| Number of parallel jobs for network transfers (default: 5). |
+| `OCIGE_SILENT` | `--silent`, `-s` | Disable progress visualization. |
 | `DOCKER_CONFIG` | `--docker-config` | Path to Docker `config.json` for registry authentication. |
 
 ---
@@ -105,11 +123,16 @@ COMMANDS:
    append   Adds files to an existing artifact
    rekey    Rotates the Vault Identity for a new recipients file
    remove   Removes files from an artifact
+   mount    Mounts an OCI artifact as a read-only FUSE filesystem
    keygen   Generates a new PQ-safe key pair
+   cache    Manage local chunk cache
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
-   --insecure              Use plain HTTP for registry
-   --docker-config string  Path to docker config.json [$DOCKER_CONFIG]
-   --help, -h              show help
+   --insecure                 Use plain HTTP for registry
+   --docker-config string     Path to docker config.json [$DOCKER_CONFIG]
+   --concurrency int, -j int  Number of parallel jobs (default: 5) [$OCIGE_CONCURRENCY]
+   --silent, -s               Disable progress visualization [$OCIGE_SILENT]
+   --retries int              Number of retries for failed network chunks (default: 2) [$OCIGE_RETRIES]
+   --help, -h                 show help
 ```
