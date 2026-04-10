@@ -21,25 +21,25 @@ import (
 )
 
 type Pusher struct {
-	RepoTarget string
-	ChunkSize  int64
-	PlainHTTP  bool
+	BaseClient
+	ChunkSize int64
 }
 
 func NewPusher(target string, chunkSize int64) *Pusher {
 	return &Pusher{
-		RepoTarget: target,
-		ChunkSize:  chunkSize,
+		BaseClient: BaseClient{
+			RepoTarget: target,
+		},
+		ChunkSize: chunkSize,
 	}
 }
 
 // PushMultiple uploads multiple paths as an encrypted OCI artifact using the Vault Identity.
 func (p *Pusher) PushMultiple(ctx context.Context, paths []string, recipients []age.Recipient) error {
-	repo, err := remote.NewRepository(p.RepoTarget)
+	repo, err := p.GetRepository(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create repository: %w", err)
+		return err
 	}
-	repo.PlainHTTP = p.PlainHTTP
 
 	// 1. Generate PQ-safe Vault Identity
 	vaultIdentity, err := age.GenerateHybridIdentity()

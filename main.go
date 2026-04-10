@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"filippo.io/age"
 	"ocige/pkg/ociregistry"
@@ -23,6 +24,8 @@ func main() {
 		handlePush(os.Args[2:])
 	case "pull":
 		handlePull(os.Args[2:])
+	case "ls":
+		handleLs(os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -34,7 +37,8 @@ func printUsage() {
 	fmt.Println("Ocige - Secure File Sharing over OCI Registries")
 	fmt.Println("Usage:")
 	fmt.Println("  ocige push -r <registry-target> -R <recipients-file> <path1> [path2...]")
-	fmt.Println("  ocige pull -r <registry-target> -i <identity-file> [-C <out-dir>]")
+	fmt.Println("  ocige pull -r <registry-target> -i <identity-file> [-f <filename>] [-C <out-dir>]")
+	fmt.Println("  ocige ls -r <registry-target> -i <identity-file>")
 }
 
 func handlePush(args []string) {
@@ -97,6 +101,7 @@ func handlePull(args []string) {
 	pullCmd := flag.NewFlagSet("pull", flag.ExitOnError)
 	target := pullCmd.String("r", "", "OCI registry target (e.g. ghcr.io/user/file:tag)")
 	identityFile := pullCmd.String("i", "", "Path to age identity file")
+	filterFile := pullCmd.String("f", "", "Selective pull: only extract this file")
 	destDir := pullCmd.String("C", ".", "Destination directory")
 	insecure := pullCmd.Bool("insecure", false, "Use plain HTTP for registry")
 
@@ -124,14 +129,19 @@ func handlePull(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Vault unlocked. Found %d files. Extracting to %s...\n", len(index.Files), *destDir)
+	fmt.Printf("Vault unlocked. Found %d files.\n", len(index.Files))
 	
 	if err := os.MkdirAll(*destDir, 0755); err != nil {
 		fmt.Printf("Failed to create destination directory: %v\n", err)
 		os.Exit(1)
 	}
 
+	found := false
 	for _, entry := range index.Files {
+		if *filterFile != "" && entry.Path != *filterFile {
+			continue
+		}
+		found = true
 		fmt.Printf("  -> Pulling %s...\n", entry.Path)
 		fileReader, err := puller.PullFile(context.Background(), entry, vaultIdentity)
 		if err != nil {
@@ -160,7 +170,63 @@ func handlePull(args []string) {
 		fileReader.Close()
 	}
 
+	if *filterFile != "" && !found {
+		fmt.Printf("Error: file '%s' not found in artifact\n", *filterFile)
+		os.Exit(1)
+	}
+
 	fmt.Println("Pull successful!")
+}
+
+func handleLs(args []string) {
+	lsCmd := flag.NewFlagSet("ls", flag.ExitOnError)
+	target := lsCmd.String("r", "", "OCI registry target (e.g. ghcr.io/user/file:tag)")
+	identityFile := lsCmd.String("i", "", "Path to age identity file")
+	insecure := lsCmd.Bool("insecure", false, "Use plain HTTP for registry")
+
+	lsCmd.Parse(args)
+
+	if *target == "" || *identityFile == "" {
+		fmt.Println("Missing required arguments for ls")
+		lsCmd.Usage()
+		os.Exit(1)
+	}
+
+	identities, err := parseIdentities(*identityFile)
+	if err != nil {
+		fmt.Printf("Error parsing identity: %v\n", err)
+		os.Exit(1)
+	}
+
+	puller := ociregistry.NewPuller(*target)
+	puller.PlainHTTP = *insecure
+
+	fmt.Printf("Unlocking vault and fetching index from %s...\n", *target)
+	index, _, err := puller.FetchIndex(context.Background(), identities)
+	if err != nil {
+		fmt.Printf("Failed to unlock vault or fetch index: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n%-40s %-10s %s\n", "PATH", "SIZE", "SHA256 (Original)")
+	fmt.Println(strings.Repeat("-", 80))
+	for _, f := range index.Files {
+		sizeStr := formatSize(f.Size)
+		fmt.Printf("%-40s %-10s %s\n", f.Path, sizeStr, f.SHA256[:12])
+	}
+}
+
+func formatSize(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func parseIdentities(path string) ([]age.Identity, error) {

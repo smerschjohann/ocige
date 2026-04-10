@@ -15,14 +15,15 @@ import (
 )
 
 type Puller struct {
-	RepoTarget string
-	PlainHTTP  bool
+	BaseClient
 }
 
 func NewPuller(target string) *Puller {
 	return &Puller{
-		RepoTarget: target,
-		PlainHTTP:  false,
+		BaseClient: BaseClient{
+			RepoTarget: target,
+			PlainHTTP:  false,
+		},
 	}
 }
 
@@ -80,11 +81,10 @@ func (p *Puller) unlockVault(ctx context.Context, repo *remote.Repository, ident
 
 // FetchIndex resolves everything and returns the decrypted index and the vault identity.
 func (p *Puller) FetchIndex(ctx context.Context, identities []age.Identity) (*Index, age.Identity, error) {
-	repo, err := remote.NewRepository(p.RepoTarget)
+	repo, err := p.GetRepository(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create repository: %w", err)
+		return nil, nil, err
 	}
-	repo.PlainHTTP = p.PlainHTTP
 
 	vaultIdentity, _, manifest, err := p.unlockVault(ctx, repo, identities)
 	if err != nil {
@@ -124,11 +124,10 @@ func (p *Puller) FetchIndex(ctx context.Context, identities []age.Identity) (*In
 
 // PullFile streams a specific file using the vault identity.
 func (p *Puller) PullFile(ctx context.Context, entry FileEntry, vaultIdentity age.Identity) (io.ReadCloser, error) {
-	repo, err := remote.NewRepository(p.RepoTarget)
+	repo, err := p.GetRepository(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository: %w", err)
+		return nil, err
 	}
-	repo.PlainHTTP = p.PlainHTTP
 
 	headerBytes, err := base64.StdEncoding.DecodeString(entry.Header)
 	if err != nil {
