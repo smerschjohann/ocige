@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestNonPQKeyRejection(t *testing.T) {
+func TestSecurityKeyValidation(t *testing.T) {
 	registry := setupRegistry(t)
 	defer teardownRegistry(t)
 
@@ -24,13 +24,21 @@ func TestNonPQKeyRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Standard X25519 keys (NOT PQ-safe)
+	// Standard X25519 keys (NOT PQ-safe, should be blocked on PUSH)
 	nonPQRecipient := "age1cy0su9fwf3gf9mw868g5yut09p6nytfmmnktexz2ya5uqg9vl9sss4euqm"
 	nonPQIdentity := "AGE-SECRET-KEY-184JMZMVQH3E6U0PSL869004Y3U2NYV7R30EU99CSEDNPH02YUVFSZW44VU"
 
+	// Plugin-style keys (allowed on PUSH/PULL because they MIGHT be PQ-safe)
+	pluginRecipient := "age1fido217vll9sss4euqm" // Mock-style plugin address
+
 	recipientFile := filepath.Join(tmpDir, "bad_recipient.txt")
-	identityFile := filepath.Join(tmpDir, "bad_identity.txt")
+	pluginRecipientFile := filepath.Join(tmpDir, "plugin_recipient.txt")
+	identityFile := filepath.Join(tmpDir, "any_identity.txt")
+
 	if err := os.WriteFile(recipientFile, []byte(nonPQRecipient), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pluginRecipientFile, []byte(pluginRecipient), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(identityFile, []byte(nonPQIdentity), 0600); err != nil {
@@ -39,7 +47,7 @@ func TestNonPQKeyRejection(t *testing.T) {
 
 	targetURL := fmt.Sprintf("%s/test/security-artifact:latest", registry)
 
-	t.Run("PushWithNonPQRecipient", func(t *testing.T) {
+	t.Run("PushWithNonPQRecipientRejection", func(t *testing.T) {
 		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
 			"--recipients", recipientFile,
 			"--insecure",
@@ -49,31 +57,60 @@ func TestNonPQKeyRejection(t *testing.T) {
 
 		out, err := pushCmd.CombinedOutput()
 		if err == nil {
-			t.Fatal("Push should have failed with non-PQ recipient, but it succeeded")
+			t.Fatal("Push should have failed with non-PQ recipient (X25519), but it succeeded")
 		}
 
-		fmt.Printf("Push output as expected: %s\n", string(out))
 		if !strings.Contains(string(out), "non-PQ recipient found") {
 			t.Errorf("Expected error message 'non-PQ recipient found', got: %s", string(out))
 		}
 	})
 
-	t.Run("PullWithNonPQIdentity", func(t *testing.T) {
-		// Even if push failed, we can try to pull (assuming some artifact exists or just for identity parsing)
+	t.Run("PushWithNonPQRecipientOverride", func(t *testing.T) {
+		// Using the --allow-non-pq flag should bypass the check.
+		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+			"--recipients", recipientFile,
+			"--allow-non-pq",
+			"--insecure",
+			targetURL,
+			testFile)
+		pushCmd.Dir = "../../"
+
+		out, _ := pushCmd.CombinedOutput()
+		if strings.Contains(string(out), "non-PQ recipient found") {
+			t.Errorf("Push was incorrectly blocked by PQ-check despite --allow-non-pq flag: %s", string(out))
+		}
+	})
+
+	t.Run("PushWithPluginRecipientAcceptance", func(t *testing.T) {
+		// This should fail for OTHER reasons (registry unreachable or something), 
+		// but NOT because of key validation.
+		// Since we want to test VALIDATION specifically, we check if the error is about the key.
+		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+			"--recipients", pluginRecipientFile,
+			"--insecure",
+			targetURL,
+			testFile)
+		pushCmd.Dir = "../../"
+
+		out, _ := pushCmd.CombinedOutput()
+		// We expect a failure because age-plugin-fido2 is likely not in the test environment,
+		// but it should NOT say "non-PQ recipient found".
+		if strings.Contains(string(out), "non-PQ recipient found") {
+			t.Errorf("Plugin recipient was incorrectly blocked by PQ-check: %s", string(out))
+		}
+	})
+
+	t.Run("PullWithAnyIdentityAllowed", func(t *testing.T) {
+		// Should NOT fail with "non-PQ identity found" anymore.
 		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
 			"--identity", identityFile,
 			"--insecure",
 			targetURL)
 		pullCmd.Dir = "../../"
 
-		out, err := pullCmd.CombinedOutput()
-		if err == nil {
-			t.Fatal("Pull should have failed with non-PQ identity, but it succeeded")
-		}
-
-		fmt.Printf("Pull output as expected: %s\n", string(out))
-		if !strings.Contains(string(out), "non-PQ identity found") {
-			t.Errorf("Expected error message 'non-PQ identity found', got: %s", string(out))
+		out, _ := pullCmd.CombinedOutput()
+		if strings.Contains(string(out), "non-PQ identity found") {
+			t.Errorf("Identity was incorrectly blocked by PQ-check: %s", string(out))
 		}
 	})
 }

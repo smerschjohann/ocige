@@ -40,7 +40,7 @@ func handlePush(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("recipients file is required (use -R or OCIGE_RECIPIENTS)")
 	}
 
-	recipients, err := parseRecipients(recipientsFile)
+	recipients, err := parseRecipients(recipientsFile, cmd.Bool("allow-non-pq"))
 	if err != nil {
 		return fmt.Errorf("error parsing recipients: %w", err)
 	}
@@ -357,7 +357,7 @@ func handleRekey(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error parsing identity: %w", err)
 	}
 
-	newRecipients, err := parseRecipients(newRecipientsFile)
+	newRecipients, err := parseRecipients(newRecipientsFile, cmd.Bool("allow-non-pq"))
 	if err != nil {
 		return fmt.Errorf("error parsing new recipients: %w", err)
 	}

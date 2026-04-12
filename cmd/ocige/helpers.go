@@ -8,7 +8,7 @@ import (
 	"filippo.io/age"
 )
 
-func parseRecipients(path string) ([]age.Recipient, error) {
+func parseRecipients(path string, allowNonPQ bool) ([]age.Recipient, error) {
 	if path == "" {
 		return nil, fmt.Errorf("recipients file path is empty")
 	}
@@ -23,9 +23,13 @@ func parseRecipients(path string) ([]age.Recipient, error) {
 		return nil, err
 	}
 
-	for _, r := range recipients {
-		if _, ok := r.(*age.HybridRecipient); !ok {
-			return nil, fmt.Errorf("non-PQ recipient found: only Hybrid (PQ-safe) recipients are allowed")
+	if !allowNonPQ {
+		for _, r := range recipients {
+			// Specifically block known non-PQ recipients (X25519).
+			// We allow HybridRecipient (known PQ-safe) and Plugins (could be PQ-safe).
+			if _, ok := r.(*age.X25519Recipient); ok {
+				return nil, fmt.Errorf("non-PQ recipient found: X25519 (age1...) is not allowed, please use a Hybrid (age1pq1...) key or a PQ-safe plugin (or use --allow-non-pq to override)")
+			}
 		}
 	}
 
@@ -42,18 +46,7 @@ func parseIdentities(path string) ([]age.Identity, error) {
 	}
 	defer f.Close()
 
-	identities, err := age.ParseIdentities(f)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, i := range identities {
-		if _, ok := i.(*age.HybridIdentity); !ok {
-			return nil, fmt.Errorf("non-PQ identity found: only Hybrid (PQ-safe) identities are allowed")
-		}
-	}
-
-	return identities, nil
+	return age.ParseIdentities(f)
 }
 
 func formatSize(b int64) string {

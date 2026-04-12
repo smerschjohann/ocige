@@ -16,7 +16,6 @@ Since it uses Age, multiple recipients can receive the files by exchanging their
 ## Usage
 
 *Ocige* uses a "Vault" concept. Each artifact in the registry is its own encrypted vault, locked by a unique **Vault Identity**. You then share this identity's secret key with specific recipients by encrypting it for their public keys.
-
 ### 1. Key Generation
 To use Ocige, you need a PQ-safe key pair.
 
@@ -29,8 +28,11 @@ ocige keygen -o mykey.txt
 *   The output file also contains your **Public Key** (starting with `age1pq1...`) in a comment. Share this with others so they can send you files.
 *   This is compatible with standard PQ-safe Age recipients and identities (https://age-encryption.org/).
 
+> [!IMPORTANT]
+> **A Note on Plugins & Hardware Tokens:** Ocige supports `age-plugins` (like keystore). While these are allowed, Ocige cannot verify if a plugin-based key is truly Post-Quantum safe. Use them at your own discretion if PQ-security is a requirement for your use case.
+
 ### 2. Pushing Files (Creating a Vault)
-To upload files, you need the public keys of all intended recipients.
+To upload files, you need the public keys of all intended recipients. By default, Ocige enforces the use of PQ-safe (`age1pq1...`) recipients or plugins.
 
 ```bash
 # Create a recipients file (one public key per line)
@@ -39,8 +41,8 @@ echo "age1pq1..." > recipients.txt
 # Push files/folders to a registry
 ocige push --recipients recipients.txt ghcr.io/user/my-vault:v1 file.pdf data/
 
-# Push from stdin (requires --name)
-cat data.tar.gz | ocige push --recipients recipients.txt ghcr.io/user/my-vault:v1 - --name backup.tar.gz
+# Push using standard (non-PQ) age keys (requires explicit override)
+ocige push --allow-non-pq --recipients std_keys.txt ghcr.io/user/my-vault:v1 file.pdf
 ```
 
 ### 3. Listing Contents
@@ -152,5 +154,6 @@ GLOBAL OPTIONS:
    --concurrency int, -j int  Number of parallel jobs (default: 5) [$OCIGE_CONCURRENCY]
    --silent, -s               Disable progress visualization [$OCIGE_SILENT]
    --retries int              Number of retries for failed network chunks (default: 2) [$OCIGE_RETRIES]
+   --allow-non-pq             Allow using non-PQ-safe recipients (e.g. standard age keys)
    --help, -h                 show help
 ```

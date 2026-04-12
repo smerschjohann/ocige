@@ -44,6 +44,10 @@ func main() {
 				Usage:   "Number of retries for failed network chunks",
 				Sources: cli.EnvVars("OCIGE_RETRIES"),
 			},
+			&cli.BoolFlag{
+				Name:  "allow-non-pq",
+				Usage: "Allow using non-PQ-safe recipients (e.g. standard age keys)",
+			},
 		},
 		Commands: []*cli.Command{
 			{
