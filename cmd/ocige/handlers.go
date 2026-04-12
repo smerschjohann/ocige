@@ -414,6 +414,35 @@ func handleRemove(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func handleDelete(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args().Slice()
+	if len(args) < 1 {
+		return fmt.Errorf("target is required")
+	}
+	target := args[0]
+	insecure := cmd.Bool("insecure")
+	dockerConfig := cmd.String("docker-config")
+	deleteBlobs := cmd.Bool("blobs")
+
+	client := &ociregistry.BaseClient{
+		RepoTarget:       target,
+		PlainHTTP:        insecure,
+		DockerConfigPath: dockerConfig,
+	}
+
+	blobsHint := ""
+	if deleteBlobs {
+		blobsHint = " (including blobs)"
+	}
+	fmt.Printf("Deleting manifest at %s%s...\n", target, blobsHint)
+
+	if err := client.DeleteManifest(ctx, deleteBlobs); err != nil {
+		return fmt.Errorf("delete failed: %w", err)
+	}
+	fmt.Println("Delete successful!")
+	return nil
+}
+
 func handleKeygen(ctx context.Context, cmd *cli.Command) error {
 	outFile := cmd.String("output")
 

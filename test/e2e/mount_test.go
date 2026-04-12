@@ -76,7 +76,7 @@ func TestMountE2E(t *testing.T) {
 			t.Log("Cleaning up mount process...")
 			// Send SIGINT to the entire process group
 			syscall.Kill(-mountCmd.Process.Pid, syscall.SIGINT)
-			
+
 			// Poll for exit or force kill after timeout
 			done := make(chan error, 1)
 			go func() { done <- mountCmd.Wait() }()

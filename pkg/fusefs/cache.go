@@ -12,12 +12,12 @@ import (
 
 // DiskCache stores encrypted OCI chunks as files on disk.
 type DiskCache struct {
-	dir      string
-	maxSize  int64
-	mu       sync.Mutex
-	entries  map[string]*cacheEntry
-	lru      *list.List
-	current  int64
+	dir       string
+	maxSize   int64
+	mu        sync.Mutex
+	entries   map[string]*cacheEntry
+	lru       *list.List
+	current   int64
 	fetches   map[string]*fetchResult
 	fetchesMu sync.Mutex
 }
@@ -68,7 +68,7 @@ func NewDiskCache(dir string, maxSize int64) (*DiskCache, error) {
 
 		digest := strings.Replace(f.Name(), "_", ":", 1)
 		path := filepath.Join(dir, f.Name())
-		
+
 		entry := &cacheEntry{
 			digest:     digest,
 			path:       path,

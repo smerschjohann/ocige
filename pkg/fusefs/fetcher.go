@@ -18,7 +18,7 @@ type ChunkFetcher struct {
 	client        *ociregistry.BaseClient
 	vaultIdentity age.Identity
 	cache         *DiskCache
-	sem           chan struct{} // Concurrency limiter for registry access
+	sem           chan struct{}   // Concurrency limiter for registry access
 	ctx           context.Context // Long-lived context for background fetches
 }
 

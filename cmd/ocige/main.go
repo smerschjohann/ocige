@@ -8,10 +8,13 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+var version = "dev"
+
 func main() {
 	cmd := &cli.Command{
-		Name:  "ocige",
-		Usage: "Secure File Sharing over OCI Registries",
+		Name:    "ocige",
+		Version: version,
+		Usage:   "Secure File Sharing over OCI Registries",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "insecure",
@@ -174,6 +177,18 @@ func main() {
 					},
 				},
 				Action: handleRemove,
+			},
+			{
+				Name:      "delete",
+				Usage:     "Deletes a manifest from the remote registry",
+				ArgsUsage: "<target>",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "blobs",
+						Usage: "Also delete all referenced blobs (config + layers)",
+					},
+				},
+				Action: handleDelete,
 			},
 			{
 				Name:      "mount",

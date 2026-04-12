@@ -99,7 +99,7 @@ func (f *VirtualFile) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 		f.reader = reader
 	}
 
-	// FOPEN_KEEP_CACHE: allow kernel to cache data. 
+	// FOPEN_KEEP_CACHE: allow kernel to cache data.
 	// This is safe since our files are read-only and immutable for the life of the mount.
 	return nil, fuse.FOPEN_KEEP_CACHE, fs.OK
 }

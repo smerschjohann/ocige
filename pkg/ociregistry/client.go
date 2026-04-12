@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"filippo.io/age"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -98,6 +99,46 @@ func (c *BaseClient) UnlockVault(ctx context.Context, repo *remote.Repository, i
 	}
 
 	return vaultIdentity, &config, &manifest, nil
+}
+
+// DeleteManifest deletes the manifest (and optionally all referenced blobs) from the registry.
+func (c *BaseClient) DeleteManifest(ctx context.Context, deleteBlobs bool) error {
+	repo, err := c.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+
+	manifestDesc, err := repo.Resolve(ctx, repo.Reference.Reference)
+	if err != nil {
+		return fmt.Errorf("failed to resolve manifest: %w", err)
+	}
+
+	var manifest ocispec.Manifest
+	if deleteBlobs {
+		rc, err := repo.Fetch(ctx, manifestDesc)
+		if err != nil {
+			return fmt.Errorf("failed to fetch manifest: %w", err)
+		}
+		defer rc.Close()
+		if err := json.NewDecoder(rc).Decode(&manifest); err != nil {
+			return fmt.Errorf("failed to decode manifest: %w", err)
+		}
+	}
+
+	if err := repo.Delete(ctx, manifestDesc); err != nil {
+		return fmt.Errorf("failed to delete manifest: %w", err)
+	}
+
+	if deleteBlobs {
+		blobs := append(manifest.Layers, manifest.Config)
+		for _, blob := range blobs {
+			if err := repo.Delete(ctx, blob); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to delete blob %s: %v\n", blob.Digest, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // FetchIndex resolves everything and returns the decrypted index and the vault identity.

@@ -123,17 +123,17 @@ func (r *OCIReaderAt) ReadAt(p []byte, off int64) (int, error) {
 		if err != nil {
 			return totalRead, fmt.Errorf("failed to open chunk file %s: %w", path, err)
 		}
-		
+
 		n, err := f.ReadAt(p[totalRead:totalRead+int(toRead)], localOff)
 		f.Close()
-		
+
 		if n > 0 {
 			totalRead += n
 			off += int64(n)
 			payloadOff += int64(n)
 			remaining -= int64(n)
 		}
-		
+
 		if err != nil && err != io.EOF {
 			return totalRead, err
 		}
