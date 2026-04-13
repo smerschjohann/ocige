@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,11 +47,7 @@ func TestMountE2E(t *testing.T) {
 
 	// 3. Push data
 	t.Logf("Pushing test data to %s...", targetURL)
-	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path, subDir)
-	pushCmd.Dir = "../../"
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
-	}
+	runOcige(t, "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path, subDir)
 
 	// 4. Start mount
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -111,21 +106,8 @@ func TestMountE2E(t *testing.T) {
 
 	// 6. Verify content
 	t.Log("Verifying content...")
-	content1, err := os.ReadFile(filepath.Join(mountPoint, "file1.txt"))
-	if err != nil {
-		t.Fatalf("Failed to read file1.txt: %v", err)
-	}
-	if !bytes.Equal(content1, data1) {
-		t.Errorf("File1 content mismatch: got %q, want %q", string(content1), string(data1))
-	}
-
-	content2, err := os.ReadFile(filepath.Join(mountPoint, "subdir", "file2.txt"))
-	if err != nil {
-		t.Fatalf("Failed to read subdir/file2.txt: %v", err)
-	}
-	if !bytes.Equal(content2, data2) {
-		t.Errorf("File2 content mismatch: got %q, want %q", string(content2), string(data2))
-	}
+	verifyFileContent(t, filepath.Join(mountPoint, "file1.txt"), data1)
+	verifyFileContent(t, filepath.Join(mountPoint, "subdir", "file2.txt"), data2)
 
 	// 7. Test read-only
 	t.Log("Verifying read-only enforcement...")

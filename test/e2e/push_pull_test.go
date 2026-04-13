@@ -1,11 +1,9 @@
 package e2e
 
 import (
-	"bytes"
 	"crypto/rand"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -65,45 +63,25 @@ func TestPushPullMultiFileE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/multi-artifact:latest", registry)
 
 	// 3. Run Push (relative paths to ensure portability)
-	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+	runOcige(t, "push",
 		"--recipients", recipientFile,
 		"--chunk-size", "1",
 		"--insecure",
 		targetURL,
 		file1, file2, subDir)
-	pushCmd.Dir = "../../"
-
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// 4. Run Pull to a new directory
 	outDir := filepath.Join(tmpDir, "extracted")
-	pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+	runOcige(t, "pull",
 		"--identity", keyFile,
 		"--insecure",
 		"--output", outDir,
 		targetURL)
-	pullCmd.Dir = "../../"
-
-	if out, err := pullCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Pull failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// 5. Verify files
-	verifyFile(t, filepath.Join(outDir, filepath.Base(file1)), data1)
-	verifyFile(t, filepath.Join(outDir, filepath.Base(file2)), data2)
-	verifyFile(t, filepath.Join(outDir, "subdir", "file3.dat"), data3)
-}
-
-func verifyFile(t *testing.T, path string, expected []byte) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Failed to read extracted file %s: %v", path, err)
-	}
-	if !bytes.Equal(data, expected) {
-		t.Errorf("Content mismatch for file %s", path)
-	}
+	verifyFileContent(t, filepath.Join(outDir, filepath.Base(file1)), data1)
+	verifyFileContent(t, filepath.Join(outDir, filepath.Base(file2)), data2)
+	verifyFileContent(t, filepath.Join(outDir, "subdir", "file3.dat"), data3)
 }
 
 func TestLargeMultiFileE2E(t *testing.T) {
@@ -148,7 +126,7 @@ func TestLargeMultiFileE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/large-multi:latest", registry)
 
 	pushArgs := []string{
-		"run", "./cmd/ocige", "push",
+		"push",
 		"--recipients", recipientFile,
 		"--chunk-size", "1",
 		"--insecure",
@@ -159,27 +137,17 @@ func TestLargeMultiFileE2E(t *testing.T) {
 		pushArgs = append(pushArgs, filepath.Join(tmpDir, fName))
 	}
 
-	pushCmd := exec.Command("go", pushArgs...)
-	pushCmd.Dir = "../../"
-
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
-	}
+	runOcige(t, pushArgs...)
 
 	outDir := filepath.Join(tmpDir, "extracted")
-	pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+	runOcige(t, "pull",
 		"--identity", keyFile,
 		"--insecure",
 		"--concurrency", "5",
 		"--output", outDir,
 		targetURL)
-	pullCmd.Dir = "../../"
-
-	if out, err := pullCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Pull failed: %v\nOutput: %s", err, string(out))
-	}
 
 	for i, fName := range files {
-		verifyFile(t, filepath.Join(outDir, fName), data[i])
+		verifyFileContent(t, filepath.Join(outDir, fName), data[i])
 	}
 }

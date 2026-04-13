@@ -48,17 +48,11 @@ func TestSecurityKeyValidation(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/security-artifact:latest", registry)
 
 	t.Run("PushWithNonPQRecipientRejection", func(t *testing.T) {
-		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+		out := runOcigeExpectError(t, "push",
 			"--recipients", recipientFile,
 			"--insecure",
 			targetURL,
 			testFile)
-		pushCmd.Dir = "../../"
-
-		out, err := pushCmd.CombinedOutput()
-		if err == nil {
-			t.Fatal("Push should have failed with non-PQ recipient (X25519), but it succeeded")
-		}
 
 		if !strings.Contains(string(out), "non-PQ recipient found") {
 			t.Errorf("Expected error message 'non-PQ recipient found', got: %s", string(out))
@@ -67,15 +61,13 @@ func TestSecurityKeyValidation(t *testing.T) {
 
 	t.Run("PushWithNonPQRecipientOverride", func(t *testing.T) {
 		// Using the --allow-non-pq flag should bypass the check.
-		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+		out := runOcige(t, "push",
 			"--recipients", recipientFile,
 			"--allow-non-pq",
 			"--insecure",
 			targetURL,
 			testFile)
-		pushCmd.Dir = "../../"
 
-		out, _ := pushCmd.CombinedOutput()
 		if strings.Contains(string(out), "non-PQ recipient found") {
 			t.Errorf("Push was incorrectly blocked by PQ-check despite --allow-non-pq flag: %s", string(out))
 		}
@@ -85,14 +77,13 @@ func TestSecurityKeyValidation(t *testing.T) {
 		// This should fail for OTHER reasons (registry unreachable or something), 
 		// but NOT because of key validation.
 		// Since we want to test VALIDATION specifically, we check if the error is about the key.
-		pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
-			"--recipients", pluginRecipientFile,
-			"--insecure",
-			targetURL,
-			testFile)
-		pushCmd.Dir = "../../"
+		
+		// It will likely fail with "age-plugin-fido2 not found" or something
+		cmdArgs := []string{"push", "--recipients", pluginRecipientFile, "--insecure", targetURL, testFile}
+		cmd := exec.Command("go", append([]string{"run", "./cmd/ocige"}, cmdArgs...)...)
+		cmd.Dir = "../.."
+		out, _ := cmd.CombinedOutput()
 
-		out, _ := pushCmd.CombinedOutput()
 		// We expect a failure because age-plugin-fido2 is likely not in the test environment,
 		// but it should NOT say "non-PQ recipient found".
 		if strings.Contains(string(out), "non-PQ recipient found") {
@@ -102,13 +93,11 @@ func TestSecurityKeyValidation(t *testing.T) {
 
 	t.Run("PullWithAnyIdentityAllowed", func(t *testing.T) {
 		// Should NOT fail with "non-PQ identity found" anymore.
-		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
-			"--identity", identityFile,
-			"--insecure",
-			targetURL)
-		pullCmd.Dir = "../../"
+		cmdArgs := []string{"pull", "--identity", identityFile, "--insecure", targetURL}
+		cmd := exec.Command("go", append([]string{"run", "./cmd/ocige"}, cmdArgs...)...)
+		cmd.Dir = "../.."
+		out, _ := cmd.CombinedOutput()
 
-		out, _ := pullCmd.CombinedOutput()
 		if strings.Contains(string(out), "non-PQ identity found") {
 			t.Errorf("Identity was incorrectly blocked by PQ-check: %s", string(out))
 		}

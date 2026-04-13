@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -32,93 +31,57 @@ func TestStreamingE2E(t *testing.T) {
 	testData := []byte("This is streamed data from stdin")
 
 	// 2. Push from Stdin
-	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+	runOcigeWithStdin(t, testData, "push",
 		"--recipients", recipientFile,
 		"--insecure",
 		"--silent",
 		"--name", "stdin.txt",
 		targetURL, "-")
-	pushCmd.Dir = "../../"
-	pushCmd.Stdin = bytes.NewReader(testData)
-
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push from stdin failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// 3. Cat to Stdout
-	catCmd := exec.Command("go", "run", "./cmd/ocige", "cat",
+	catOut := runOcige(t, "cat",
 		"--identity", keyFile,
 		"--insecure",
 		targetURL, "stdin.txt")
-	catCmd.Dir = "../../"
 
-	var catOut bytes.Buffer
-	catCmd.Stdout = &catOut
-	if err := catCmd.Run(); err != nil {
-		t.Fatalf("Cat failed: %v", err)
-	}
-
-	if !bytes.Equal(catOut.Bytes(), testData) {
-		t.Errorf("Cat output mismatch. Got %q, want %q", catOut.String(), string(testData))
+	if !bytes.Equal(catOut, testData) {
+		t.Errorf("Cat output mismatch. Got %q, want %q", string(catOut), string(testData))
 	}
 
 	// 4. Append from Stdin
 	appendData := []byte("More data from stdin")
-	appendCmd := exec.Command("go", "run", "./cmd/ocige", "append",
+	runOcigeWithStdin(t, appendData, "append",
 		"--identity", keyFile,
 		"--insecure",
 		"--silent",
 		"--name", "appended.txt",
 		targetURL, "-")
-	appendCmd.Dir = "../../"
-	appendCmd.Stdin = bytes.NewReader(appendData)
-
-	if out, err := appendCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Append from stdin failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// 5. Verify appended file
-	catCmd2 := exec.Command("go", "run", "./cmd/ocige", "cat",
+	catOut2 := runOcige(t, "cat",
 		"--identity", keyFile,
 		"--insecure",
 		targetURL, "appended.txt")
-	catCmd2.Dir = "../../"
-	var catOut2 bytes.Buffer
-	catCmd2.Stdout = &catOut2
-	if err := catCmd2.Run(); err != nil {
-		t.Fatalf("Cat appended file failed: %v", err)
-	}
 
-	if !bytes.Equal(catOut2.Bytes(), appendData) {
-		t.Errorf("Appended cat output mismatch. Got %q, want %q", catOut2.String(), string(appendData))
+	if !bytes.Equal(catOut2, appendData) {
+		t.Errorf("Appended cat output mismatch. Got %q, want %q", string(catOut2), string(appendData))
 	}
 
 	// 6. Test Binary File Cat (Redirected - should pass without sniffing blocking it)
 	binData := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02}
-	pushBinCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+	runOcigeWithStdin(t, binData, "push",
 		"--recipients", recipientFile,
 		"--insecure",
 		"--silent",
 		"--name", "test.bin",
 		targetURL, "-")
-	pushBinCmd.Dir = "../../"
-	pushBinCmd.Stdin = bytes.NewReader(binData)
-	if out, err := pushBinCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push binary from stdin failed: %v\nOutput: %s", err, string(out))
-	}
 
-	catBinCmd := exec.Command("go", "run", "./cmd/ocige", "cat",
+	catBinOut := runOcige(t, "cat",
 		"--identity", keyFile,
 		"--insecure",
 		targetURL, "test.bin")
-	catBinCmd.Dir = "../../"
-	var catBinOut bytes.Buffer
-	catBinCmd.Stdout = &catBinOut
-	if err := catBinCmd.Run(); err != nil {
-		t.Fatalf("Cat binary file failed: %v", err)
-	}
 
-	if !bytes.Equal(catBinOut.Bytes(), binData) {
-		t.Errorf("Binary cat output mismatch. Got %v, want %v", catBinOut.Bytes(), binData)
+	if !bytes.Equal(catBinOut, binData) {
+		t.Errorf("Binary cat output mismatch. Got %v, want %v", catBinOut, binData)
 	}
 }

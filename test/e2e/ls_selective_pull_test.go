@@ -1,11 +1,9 @@
 package e2e
 
 import (
-	"bytes"
 	"crypto/rand"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,26 +52,17 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/ls-artifact:latest", registry)
 
 	// 3. Push files
-	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+	runOcige(t, "push",
 		"--recipients", recipientFile,
 		"--insecure",
 		targetURL,
 		file1, file2)
-	pushCmd.Dir = "../../"
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// 4. Test LS
-	lsCmd := exec.Command("go", "run", "./cmd/ocige", "ls",
+	lsOut := runOcige(t, "ls",
 		"--identity", keyFile,
 		"--insecure",
 		targetURL)
-	lsCmd.Dir = "../../"
-	lsOut, err := lsCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("LS failed: %v\nOutput: %s", err, string(lsOut))
-	}
 
 	lsStr := string(lsOut)
 	if !strings.Contains(lsStr, "file1.bin") || !strings.Contains(lsStr, "file2.txt") {
@@ -82,16 +71,12 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 
 	// 5. Test Selective Pull
 	outDir := filepath.Join(tmpDir, "extracted")
-	pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+	runOcige(t, "pull",
 		"--identity", keyFile,
 		"--insecure",
 		"--output", outDir,
 		targetURL,
 		"file2.txt")
-	pullCmd.Dir = "../../"
-	if out, err := pullCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Selective Pull failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// Verify only file2.txt exists in outDir
 	entries, _ := os.ReadDir(outDir)
@@ -102,11 +87,5 @@ func TestLsAndSelectivePullE2E(t *testing.T) {
 		t.Errorf("Expected file2.txt, got %s", entries[0].Name())
 	}
 
-	data, err := os.ReadFile(filepath.Join(outDir, "file2.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(data, data2) {
-		t.Errorf("Content mismatch for file2.txt")
-	}
+	verifyFileContent(t, filepath.Join(outDir, "file2.txt"), data2)
 }

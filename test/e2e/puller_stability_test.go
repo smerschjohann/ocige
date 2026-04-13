@@ -8,7 +8,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -65,16 +64,12 @@ func TestPullerStabilityProxy(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/stability:latest", registry)
 
 	// Push the 5MB file with 1MB chunk size (so it creates 5 chunks)
-	pushCmd := exec.Command("go", "run", "./cmd/ocige", "push",
+	runOcige(t, "push",
 		"--recipients", recipientFile,
 		"--chunk-size", "1",
 		"--insecure",
 		targetURL,
 		file1)
-	pushCmd.Dir = "../../"
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Push failed: %v\nOutput: %s", err, string(out))
-	}
 
 	// Create reverse proxy to introduce faults
 	u, _ := url.Parse("http://" + registry)
@@ -114,19 +109,13 @@ func TestPullerStabilityProxy(t *testing.T) {
 		atomic.StoreInt32(&blobGetCount, 0)
 
 		outDir := filepath.Join(tmpDir, "extracted_delay")
-		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+		runOcige(t, "pull",
 			"--identity", keyFile,
 			"--insecure",
 			"--output", outDir,
 			proxyURL)
-		pullCmd.Dir = "../../"
 
-		out, err := pullCmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Pull failed on out-of-order chunks: %v\nOutput: %s", err, string(out))
-		}
-
-		verifyFile(t, filepath.Join(outDir, "large_file.bin"), data1)
+		verifyFileContent(t, filepath.Join(outDir, "large_file.bin"), data1)
 	})
 
 	t.Run("PullCorruption", func(t *testing.T) {
@@ -134,17 +123,11 @@ func TestPullerStabilityProxy(t *testing.T) {
 		atomic.StoreInt32(&blobGetCount, 0)
 
 		outDir := filepath.Join(tmpDir, "extracted_corrupt")
-		pullCmd := exec.Command("go", "run", "./cmd/ocige", "pull",
+		out := runOcigeExpectError(t, "pull",
 			"--identity", keyFile,
 			"--insecure",
 			"--output", outDir,
 			proxyURL)
-		pullCmd.Dir = "../../"
-
-		out, err := pullCmd.CombinedOutput()
-		if err == nil {
-			t.Fatalf("Pull succeeded despite corruption! Output: %s", string(out))
-		}
 
 		if !strings.Contains(string(out), "failed to decrypt and authenticate") {
 			t.Fatalf("Pull failed but didn't mention decryption failure: %s", string(out))

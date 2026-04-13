@@ -39,7 +39,7 @@ func TestCacheCleanupE2E(t *testing.T) {
 	targetURL := fmt.Sprintf("%s/test/cache-cleanup:latest", registry)
 
 	// 3. Push and Mount to populate cache
-	mustRun(t, "../../", "go", "run", "./cmd/ocige", "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path)
+	runOcige(t, "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	os.Mkdir(mountPoint, 0755)
@@ -71,7 +71,7 @@ func TestCacheCleanupE2E(t *testing.T) {
 	}
 
 	// 5. Run targeted cleanup
-	mustRun(t, "../../", "go", "run", "./cmd/ocige", "cache", "cleanup", "--cache-dir", cacheDir, "--insecure", targetURL)
+	runOcige(t, "cache", "cleanup", "--cache-dir", cacheDir, "--insecure", targetURL)
 
 	// 6. Verify specific chunks are gone
 	files, _ = os.ReadDir(chunksDir)
@@ -80,25 +80,17 @@ func TestCacheCleanupE2E(t *testing.T) {
 	}
 
 	// 7. Populate again for global cleanup
-	mustRun(t, "../../", "go", "run", "./cmd/ocige", "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path)
+	runOcige(t, "push", "--recipients", recipientFile, "--insecure", targetURL, file1Path)
 	// (Simulate cache population manually for speed)
 	os.MkdirAll(chunksDir, 0755)
 	os.WriteFile(filepath.Join(chunksDir, "sha256_deadbeef"), []byte("data"), 0644)
 
 	// 8. Run global cleanup
-	mustRun(t, "../../", "go", "run", "./cmd/ocige", "cache", "cleanup", "--cache-dir", cacheDir)
+	runOcige(t, "cache", "cleanup", "--cache-dir", cacheDir)
 
 	// 9. Verify global cleanup
 	files, _ = os.ReadDir(chunksDir)
 	if len(files) != 0 {
 		t.Errorf("Cache should be empty after global cleanup, got %d files", len(files))
-	}
-}
-
-func mustRun(t *testing.T, dir string, name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Command %s %v failed: %v\nOutput: %s", name, args, err, string(out))
 	}
 }

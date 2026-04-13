@@ -99,12 +99,7 @@ func TestDeleteManifestE2E(t *testing.T) {
 		runOcige(t, "delete", "--insecure", targetURL)
 
 		// Verify pull now fails (manifest is gone)
-		pullCmd := exec.Command("go", "run", "./cmd/ocige",
-			"pull", "--identity", keyFile, "--insecure", "--output", filepath.Join(tmpDir, "extracted_after_delete"), targetURL)
-		pullCmd.Dir = "../.."
-		if err := pullCmd.Run(); err == nil {
-			t.Error("Pull should have failed after manifest deletion, but succeeded")
-		}
+		runOcigeExpectError(t, "pull", "--identity", keyFile, "--insecure", "--output", filepath.Join(tmpDir, "extracted_after_delete"), targetURL)
 	})
 
 	t.Run("DeleteManifestWithBlobs", func(t *testing.T) {
@@ -117,22 +112,11 @@ func TestDeleteManifestE2E(t *testing.T) {
 		runOcige(t, "delete", "--blobs", "--insecure", blobsTarget)
 
 		// Verify pull now fails
-		pullCmd := exec.Command("go", "run", "./cmd/ocige",
-			"pull", "--identity", keyFile, "--insecure", "--output", filepath.Join(tmpDir, "extracted_after_blobs_delete"), blobsTarget)
-		pullCmd.Dir = "../.."
-		if err := pullCmd.Run(); err == nil {
-			t.Error("Pull should have failed after manifest+blobs deletion, but succeeded")
-		}
+		runOcigeExpectError(t, "pull", "--identity", keyFile, "--insecure", "--output", filepath.Join(tmpDir, "extracted_after_blobs_delete"), blobsTarget)
 	})
 
 	t.Run("DeleteNonExistentFails", func(t *testing.T) {
 		nonExistentTarget := fmt.Sprintf("%s/test/does-not-exist:latest", registry)
-
-		deleteCmd := exec.Command("go", "run", "./cmd/ocige",
-			"delete", "--insecure", nonExistentTarget)
-		deleteCmd.Dir = "../.."
-		if err := deleteCmd.Run(); err == nil {
-			t.Error("Delete of non-existent manifest should have failed, but succeeded")
-		}
+		runOcigeExpectError(t, "delete", "--insecure", nonExistentTarget)
 	})
 }
