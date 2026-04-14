@@ -52,7 +52,7 @@ jobs:
       - name: Extract Image Digest
         id: digest
         run: |
-          DIGEST=$(echo '${{ steps.goreleaser.outputs.artifacts }}' | jq -r '.[] | select(.type=="Docker Manifest") | .extra.Digest')
+          DIGEST=$(echo '${{ steps.goreleaser.outputs.artifacts }}' | jq -r '[.[] | select(.type=="Docker Image") | .extra.Digest] | first')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Artifacts
