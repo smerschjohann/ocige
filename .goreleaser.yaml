@@ -28,10 +28,11 @@ archives:
     files:
       - README.md
       - LICENSE
-      - docs/*
 
 dockers_v2:
-  - images:
+  - ids:
+      - ocige
+    images:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/ocige"
     tags:
       - "{{.Tag}}"

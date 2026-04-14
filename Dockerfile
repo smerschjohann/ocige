@@ -1,5 +1,6 @@
 FROM gcr.io/distroless/static:nonroot
 
-COPY ocige /usr/local/bin/ocige
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/ocige /usr/local/bin/ocige
 
 ENTRYPOINT ["/usr/local/bin/ocige"]
