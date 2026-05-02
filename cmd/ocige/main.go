@@ -143,6 +143,11 @@ func main() {
 						Usage:   "Path to age identity file",
 						Sources: cli.EnvVars("OCIGE_IDENTITY"),
 					},
+					&cli.IntFlag{
+						Name:  "chunk-size",
+						Value: 2000,
+						Usage: "Chunk size in MB",
+					},
 					&cli.BoolFlag{
 						Name:  "force",
 						Usage: "Overwrite existing files without warning",

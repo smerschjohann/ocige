@@ -289,6 +289,7 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	target := args[0]
 	files := args[1:]
 	identityFile := cmd.String("identity")
+	chunkSizeMB := cmd.Int("chunk-size")
 	name := cmd.String("name")
 	force := cmd.Bool("force")
 	insecure := cmd.Bool("insecure")
@@ -300,13 +301,16 @@ func handleAppend(ctx context.Context, cmd *cli.Command) error {
 	if identityFile == "" {
 		return fmt.Errorf("identity file is required (use -i or OCIGE_IDENTITY)")
 	}
+	if chunkSizeMB <= 0 {
+		return fmt.Errorf("chunk-size must be greater than 0 MB")
+	}
 
 	identities, err := parseIdentities(identityFile)
 	if err != nil {
 		return fmt.Errorf("error parsing identity: %w", err)
 	}
 
-	pusher := ociregistry.NewPusher(target, 100*1024*1024)
+	pusher := ociregistry.NewPusher(target, int64(chunkSizeMB)*1024*1024)
 	pusher.PlainHTTP = insecure
 	pusher.DockerConfigPath = dockerConfig
 	pusher.Concurrency = concurrency

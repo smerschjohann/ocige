@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,6 +62,27 @@ func TestAdvancedOpsE2E(t *testing.T) {
 		runOcige(t, "pull", "--identity", keyFile, "--insecure", "--output", outDir, targetURL)
 		verifyFileContent(t, filepath.Join(outDir, "file1.txt"), data1)
 		verifyFileContent(t, filepath.Join(outDir, "file2.txt"), data2)
+	})
+
+	t.Run("AppendChunkSize", func(t *testing.T) {
+		file3 := filepath.Join(tmpDir, "file3-large.bin")
+		data3 := bytes.Repeat([]byte("x"), 2*1024*1024)
+		if err := os.WriteFile(file3, data3, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		runOcige(t, "append", "--identity", keyFile, "--chunk-size", "1", "--insecure", targetURL, file3)
+
+		outDir := filepath.Join(tmpDir, "extracted_append_chunk_size")
+		runOcige(t, "pull", "--identity", keyFile, "--insecure", "--output", outDir, targetURL)
+		verifyFileContent(t, filepath.Join(outDir, "file3-large.bin"), data3)
+	})
+
+	t.Run("AppendChunkSizeInvalid", func(t *testing.T) {
+		out := runOcigeExpectError(t, "append", "--identity", keyFile, "--chunk-size", "0", "--insecure", targetURL, file1)
+		if !strings.Contains(string(out), "chunk-size must be greater than 0 MB") {
+			t.Fatalf("expected chunk-size validation error, got: %s", string(out))
+		}
 	})
 
 	t.Run("AppendOverwrite", func(t *testing.T) {
